@@ -1,0 +1,11 @@
+export const APP_NAME = "PowerPay";
+export const PRODUCT_NAME = "PWRC";
+export const PRODUCT_DESCRIPTION = "PowerChain Token-2022 on Solana";
+export const DISPLAY_CURRENCY = "USD";
+export const SOL_SYMBOL = "SOL";
+export const PWRC_SYMBOL = "PWRC";
+export const SOL_DECIMALS = 9;
+export const PWRC_DECIMALS = 9;
+export const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
+export const DEFAULT_MARKET_REFRESH_MS = 15_000;
+export const DEFAULT_MARKET_STALE_AFTER_SECONDS = 90;

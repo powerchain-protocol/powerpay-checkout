@@ -1,0 +1,19 @@
+[toolchain]
+package_manager = "pnpm"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+pwrc_sale = "4snMyVjPbQMkZDQ6BKqrEv1HfJxVKwvpXvT2pB4QELiM"
+
+[programs.devnet]
+pwrc_sale = "4snMyVjPbQMkZDQ6BKqrEv1HfJxVKwvpXvT2pB4QELiM"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "pnpm exec ts-mocha -p ./tsconfig.anchor.json -t 1000000 tests/**/*.ts"
