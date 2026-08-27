@@ -1,2 +1,9 @@
 packages:
   - apps/*
+
+# Explicitly approved after review. Any new dependency build script remains
+# fail-closed until it is individually reviewed and added here.
+allowBuilds:
+  bigint-buffer: true
+  bufferutil: true
+  utf-8-validate: true

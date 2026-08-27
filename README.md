@@ -1,6 +1,6 @@
 # PowerPay
 
-PowerPay is the Solana-native checkout for buying **PWRC** with **SOL**. It ships a light-theme desktop and mobile checkout, Solana Pay **Scan To Pay**, Wallet Standard connection modal, direct browser-wallet purchases, SOL/PWRC send and receive, Web3 Icons, independent SOL/USD market references, legal surfaces, and an Anchor Token-2022 sale program.
+PowerPay is the Solana-native checkout for buying **PWRC** with **SOL**. It ships a light-theme desktop and mobile checkout, Solana Pay **Scan To Pay**, Wallet Standard connection modal, direct browser-wallet purchases, SOL/PWRC send and receive, Web3 Icons, independent SOL/USD market references, legal surfaces, and an Anchor 0.32.1 Token-2022 sale program. The application is pinned to canonical PWRC mint `PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc`.
 
 ## Application architecture
 
@@ -22,7 +22,9 @@ Wallet Standard / Solana Pay
               ↓
 programs/pwrc-sale
   buyer SOL → treasury
-  sale vault PWRC → buyer ATA
+  sale vault gross PWRC → buyer ATA
+  Token-2022 fee: 2% / 200 bps (subject to on-chain max-fee cap)
+  Solana network fee: separate, paid by transaction fee payer
   (one atomic transaction)
 ```
 
@@ -81,9 +83,9 @@ Do not prefix either key with `NEXT_PUBLIC_`. Pyth Hermes requires authenticated
 ```bash
 corepack enable
 corepack prepare pnpm@11.24.0 --activate
+pnpm run doctor
+pnpm run setup:env
 pnpm install
-cp .env.example .env.local
-cp apps/web/.env.example apps/web/.env.local
 pnpm dev
 ```
 
@@ -101,10 +103,10 @@ anchor deploy --provider.cluster devnet
 anchor keys list
 ```
 
-Update `POWERPAY_PROGRAM_ID` / `NEXT_PUBLIC_POWERPAY_PROGRAM_ID` with the deployed id. Initialize the sale with the real Token-2022 PWRC mint, treasury, gross PWRC-per-SOL rate, and min/max purchase limits. Fund the sale config PDA's associated Token-2022 account before enabling purchases.
+Update `POWERPAY_PROGRAM_ID` / `NEXT_PUBLIC_POWERPAY_PROGRAM_ID` with the deployed id. Initialize the sale with the canonical Token-2022 PWRC mint, treasury, gross PWRC-per-SOL rate, and min/max purchase limits. The program rejects any mint other than `PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc` and requires the active transfer-fee policy to be exactly 200 bps (2%). Fund the sale config PDA's associated Token-2022 account before enabling purchases.
 
 ```bash
-cp .env.example .env.local
+pnpm run setup:env
 pnpm sale:init
 pnpm sale:fund
 # verify inventory, treasury, mint, limits and program id
@@ -132,7 +134,11 @@ For production, `NEXT_PUBLIC_APP_URL` must be a public HTTPS origin accessible b
 - No private key is shipped to the browser or required by the checkout server.
 - Buyer is always the fee payer and signer.
 - Treasury, PWRC mint, inventory and sale rate are read from the sale config account.
-- Token-2022 transfer fees are read from the mint and surfaced as gross/fee/net values.
+- The canonical PWRC Token-2022 mint is enforced in the program, checkout, send flow, quote service, and admin tooling.
+- Buy execution is quote-bound: expected rate, minimum net PWRC and the 200 bps fee policy are signed into the instruction.
+- Each checkout reference creates a single-use program-owned purchase receipt PDA for replay-resistant settlement verification.
+- PWRC's active Token-2022 transfer fee must be 200 bps (2%); exact expected fees are used for checked-fee transfers.
+- Solana network fees remain separate and are paid by the transaction fee payer; PowerPay currently adds no separate checkout service fee.
 - Pyth/Birdeye are display and reconciliation inputs only; they cannot mutate the sale rate.
 - Market-data API keys remain server-side.
 - Set `POWERPAY_REQUIRE_ONCHAIN_QUOTE=true` for fail-closed production sale quotes.
@@ -143,3 +149,53 @@ For production, `NEXT_PUBLIC_APP_URL` must be a public HTTPS origin accessible b
 ## Brand reference
 
 The provided PowerPay mark is under `apps/web/public/assets/brand/`. The approved light checkout reference is retained under `docs/reference/`.
+
+
+## pnpm 11 dependency-build policy
+
+PowerPay keeps pnpm 11's fail-closed dependency-build policy. The reviewed lockfile explicitly approves build scripts for `bigint-buffer`, `bufferutil`, and `utf-8-validate`. Any newly introduced dependency build script remains unreviewed and causes install to fail until it is explicitly approved or denied in `pnpm-workspace.yaml`.
+
+Do not use `dangerouslyAllowAllBuilds`. Review new build-script dependencies individually.
+
+For environment setup, use `pnpm run setup:env` instead of manual `cp` commands. It resolves paths from the repository root and never overwrites an existing `.env.local`.
+
+## v1.2.0 UI/UX hardening
+
+The checkout is intentionally optimized around one conversion: **buy PWRC with SOL**.
+
+- Added a compact sale/market status rail so users can distinguish live on-chain settlement state from display-only market data before acting.
+- Reworked the purchase hierarchy around `You pay → You receive → authoritative sale rate → payment method`.
+- Added quick SOL amount controls, explicit min/max sale limits, inline validation, quote refresh state, and clearer net/gross Token-2022 fee presentation.
+- Made Solana Pay and connected-wallet checkout real selectable interaction states instead of decorative payment rows.
+- Improved mobile behavior: same-device users get a sticky `Open Solana Pay` or wallet action instead of being forced to scan their own screen.
+- Improved Scan To Pay empty, expired, loading, and ready states; added direct mobile wallet opening and clearer order protection messaging.
+- Added a connected-wallet account menu with copy address, change wallet, and explicit disconnect actions instead of disconnecting on the first click.
+- Added active Buy / Send / Receive navigation plus visible Solana cluster status.
+- Refactored Send and Receive into clearer transaction workflows with asset selection, address validation, paste/copy helpers, transfer review, and stronger wallet-custody messaging.
+- Added keyboard focus states, reduced-motion support, responsive breakpoints, 44px+ interactive targets, and improved wallet-modal theming.
+
+The visual system remains intentionally light, industrial, calm, and finance-oriented. Green communicates verified/operational state; market data never uses styling that suggests it is the executable PWRC price.
+
+See `docs/DEPENDENCY_POLICY.md` for the reviewed pnpm build-script policy and frozen-lockfile release workflow.
+
+## v1.3.0 — canonical PWRC + fee-policy hardening
+
+- Anchor program remains on the latest stable `@coral-xyz/anchor` / Anchor crates line used by this repository: **0.32.1**.
+- Added Anchor toolchain pinning and `anchor-spl` Token-2022 extension support.
+- Pinned the canonical PWRC mint: `PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc`.
+- `initialize_sale`, `update_sale`, `buy_pwrc`, and inventory withdrawals now fail closed if canonical mint/decimals/Token-2022 fee invariants are violated.
+- `buy_pwrc` and withdrawals use exact expected `TransferCheckedWithFee` semantics.
+- Enforced an active PWRC fee of **200 bps / 2%**, while respecting the mint's on-chain maximum-fee cap.
+- Kept Solana's network fee separate from the PWRC token fee and explicitly models PowerPay's current checkout service fee as 0%.
+- Hardened `/send` to use the same canonical mint and expected-fee transfer instruction.
+- Added `docs/FEES.md`, mint/fee disclosure in checkout, Terms of Sale, and Disclaimer.
+
+
+## PowerPay v1.4.0
+
+- Pinned `@coral-xyz/anchor`, `anchor-lang`, and `anchor-spl` to 0.32.1 for this release line.
+- Added quote-bound `buy_pwrc` execution guards.
+- Added immutable single-use `PurchaseReceipt` PDAs for Solana Pay settlement evidence.
+- Kept the canonical PWRC mint pinned to `PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc`.
+- Enforced the active PWRC Token-2022 transfer fee at 200 bps / 2%; Solana runtime fees remain separate and buyer-paid.
+- Added `docs/PROGRAM_SECURITY.md`.

@@ -1,11 +1,11 @@
 {
   "name": "@powerchain/powerpay",
-  "version": "1.1.0",
+  "version": "1.4.0",
   "private": true,
   "description": "PowerPay \u2014 Solana-native PWRC checkout, Solana Pay scan-to-pay, wallet send/receive, and Token-2022 sale program.",
   "packageManager": "pnpm@11.24.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.18"
   },
   "scripts": {
     "dev": "pnpm --filter @powerchain/powerpay-web dev",
@@ -16,15 +16,18 @@
     "sale:init": "node --env-file=.env.local scripts/sale-admin.mjs initialize",
     "sale:update": "node --env-file=.env.local scripts/sale-admin.mjs update",
     "sale:fund": "node --env-file=.env.local scripts/sale-admin.mjs fund",
-    "sale:inspect": "node --env-file=.env.local scripts/sale-admin.mjs inspect"
+    "sale:inspect": "node --env-file=.env.local scripts/sale-admin.mjs inspect",
+    "setup:env": "node scripts/setup-env.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "bootstrap": "pnpm run doctor && pnpm run setup:env && pnpm install"
   },
   "devDependencies": {
-    "@coral-xyz/anchor": "^0.32.1",
+    "@anchor-lang/core": "1.1.2",
     "@types/chai": "^5.2.2",
     "@types/mocha": "^10.0.10",
     "chai": "^6.0.1",
     "ts-mocha": "^11.1.0",
-    "typescript": "^5.9.2"
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",

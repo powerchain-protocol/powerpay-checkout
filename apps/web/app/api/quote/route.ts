@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection } from "@solana/web3.js";
 import { serverEnv } from "@/env/server";
+import { CANONICAL_PWRC_MINT, POWERPAY_SERVICE_FEE_BPS, PWRC_TRANSFER_FEE_BPS } from "@/constants/app";
 import { decimalToRaw } from "@/lib/format";
 import { AppError, errorResponse } from "@/lib/errors";
 import { grossPwrcRaw, LAMPORTS_PER_SOL_BIGINT, PWRC_DECIMALS, quoteNetPwrc, readSaleConfig } from "@/lib/solana/sale";
@@ -34,6 +35,9 @@ export async function GET(req: NextRequest) {
       transferFeePwrc: Number(fee.feeRaw) / scale,
       netPwrc: Number(fee.netRaw) / scale,
       transferFeeBasisPoints: fee.feeBasisPoints,
+      transferFeeMaximumPwrc: Number(fee.maximumFeeRaw) / scale,
+      powerPayServiceFeeBasisPoints: POWERPAY_SERVICE_FEE_BPS,
+      solanaNetworkFee: "wallet-estimated",
       minSol: Number(config.minLamports) / Number(LAMPORTS_PER_SOL_BIGINT),
       maxSol: Number(config.maxLamports) / Number(LAMPORTS_PER_SOL_BIGINT),
       mint: config.pwrcMint.toBase58(),
@@ -47,9 +51,13 @@ export async function GET(req: NextRequest) {
       enabled: false,
       rate,
       grossPwrc: sol * rate,
-      transferFeePwrc: 0,
-      netPwrc: sol * rate,
-      transferFeeBasisPoints: null,
+      transferFeePwrc: sol * rate * (PWRC_TRANSFER_FEE_BPS / 10_000),
+      netPwrc: sol * rate * (1 - PWRC_TRANSFER_FEE_BPS / 10_000),
+      transferFeeBasisPoints: PWRC_TRANSFER_FEE_BPS,
+      transferFeeMaximumPwrc: null,
+      powerPayServiceFeeBasisPoints: POWERPAY_SERVICE_FEE_BPS,
+      solanaNetworkFee: "wallet-estimated",
+      mint: CANONICAL_PWRC_MINT,
       minSol: 0.01,
       maxSol: 100,
       warning: error instanceof Error ? error.message : "On-chain quote unavailable",

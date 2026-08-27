@@ -2,10 +2,7 @@ import { createHash } from "node:crypto";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
-  calculateEpochFee,
   getAssociatedTokenAddressSync,
-  getMint,
-  getTransferFeeConfig,
 } from "@solana/spl-token";
 import {
   Connection,
@@ -16,6 +13,8 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 import { programIdString, rpcUrl } from "@/lib/env";
+import { CANONICAL_PWRC_MINT } from "@/constants/app";
+import { assertCanonicalPwrcMint, quotePwrcTransferFee } from "@/lib/solana/token-fee";
 
 export const PWRC_DECIMALS = 9;
 export const LAMPORTS_PER_SOL_BIGINT = 1_000_000_000n;
@@ -41,6 +40,10 @@ export function saleConfigPda(programId = requireProgramId()) {
   return PublicKey.findProgramAddressSync([Buffer.from("sale")], programId)[0];
 }
 
+export function purchaseReceiptPda(reference: PublicKey, programId = requireProgramId()) {
+  return PublicKey.findProgramAddressSync([Buffer.from("purchase"), reference.toBuffer()], programId)[0];
+}
+
 export async function readSaleConfig(connection = new Connection(rpcUrl, "confirmed")): Promise<SaleConfig | null> {
   const programId = requireProgramId();
   const pda = saleConfigPda(programId);
@@ -61,6 +64,7 @@ export async function readSaleConfig(connection = new Connection(rpcUrl, "confir
   const maxLamports = readU64();
   const enabled = info.data[offset] === 1; offset += 1;
   const bump = info.data[offset];
+  assertCanonicalPwrcMint(pwrcMint);
   return { pda, authority, treasury, pwrcMint, pwrcPerSolGross, minLamports, maxLamports, enabled, bump };
 }
 
@@ -69,13 +73,7 @@ export function grossPwrcRaw(lamports: bigint, rate: bigint) {
 }
 
 export async function quoteNetPwrc(connection: Connection, mint: PublicKey, grossRaw: bigint) {
-  const mintInfo = await getMint(connection, mint, "confirmed", TOKEN_2022_PROGRAM_ID);
-  const feeConfig = getTransferFeeConfig(mintInfo);
-  if (!feeConfig) return { feeRaw: 0n, netRaw: grossRaw, feeBasisPoints: 0 };
-  const epoch = BigInt((await connection.getEpochInfo("confirmed")).epoch);
-  const feeRaw = calculateEpochFee(feeConfig, epoch, grossRaw);
-  const active = epoch >= feeConfig.newerTransferFee.epoch ? feeConfig.newerTransferFee : feeConfig.olderTransferFee;
-  return { feeRaw, netRaw: grossRaw - feeRaw, feeBasisPoints: active.transferFeeBasisPoints };
+  return quotePwrcTransferFee(connection, mint, grossRaw);
 }
 
 export function buyDiscriminator() {
@@ -88,15 +86,25 @@ export async function buildBuyTransaction(buyer: PublicKey, lamports: bigint, re
   const config = await readSaleConfig(connection);
   if (!config) throw new Error("PWRC sale program is not initialized");
   if (!config.enabled) throw new Error("PWRC sale is currently disabled");
+  if (config.pwrcMint.toBase58() !== CANONICAL_PWRC_MINT) throw new Error("Sale config references a non-canonical PWRC mint");
   if (lamports < config.minLamports || lamports > config.maxLamports) throw new Error("Purchase amount is outside the on-chain sale limits");
 
   const reference = requestedReference ?? Keypair.generate().publicKey;
+  const purchaseReceipt = purchaseReceiptPda(reference, programId);
   const saleVault = getAssociatedTokenAddressSync(config.pwrcMint, config.pda, true, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
   const buyerPwrc = getAssociatedTokenAddressSync(config.pwrcMint, buyer, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+  const grossRaw = grossPwrcRaw(lamports, config.pwrcPerSolGross);
+  const feeQuote = await quoteNetPwrc(connection, config.pwrcMint, grossRaw);
 
-  const data = Buffer.alloc(16);
+  // Anchor/Borsh: discriminator + u64 lamports + u64 expected rate + u64 minimum
+  // net PWRC + u16 expected transfer-fee bps. This binds execution to the quote
+  // the buyer reviewed and fails closed if rate/fee terms change before landing.
+  const data = Buffer.alloc(34);
   buyDiscriminator().copy(data, 0);
   data.writeBigUInt64LE(lamports, 8);
+  data.writeBigUInt64LE(config.pwrcPerSolGross, 16);
+  data.writeBigUInt64LE(feeQuote.netRaw, 24);
+  data.writeUInt16LE(feeQuote.feeBasisPoints, 32);
 
   const ix = new TransactionInstruction({
     programId,
@@ -108,6 +116,7 @@ export async function buildBuyTransaction(buyer: PublicKey, lamports: bigint, re
       { pubkey: saleVault, isSigner: false, isWritable: true },
       { pubkey: buyerPwrc, isSigner: false, isWritable: true },
       { pubkey: reference, isSigner: false, isWritable: false },
+      { pubkey: purchaseReceipt, isSigner: false, isWritable: true },
       { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
@@ -117,5 +126,5 @@ export async function buildBuyTransaction(buyer: PublicKey, lamports: bigint, re
 
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   const tx = new Transaction({ feePayer: buyer, blockhash, lastValidBlockHeight }).add(ix);
-  return { tx, config, reference };
+  return { tx, config, reference, purchaseReceipt, feeQuote, grossRaw };
 }

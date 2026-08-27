@@ -1,32 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { programIdString, rpcUrl } from "@/lib/env";
-import { buyDiscriminator } from "@/lib/solana/sale";
+import { purchaseReceiptPda } from "@/lib/solana/sale";
 
 export const runtime = "nodejs";
 
-const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-
-function decodeBase58(value: string) {
-  if (!value) return Buffer.alloc(0);
-  const bytes = [0];
-  for (const char of value) {
-    const digit = BASE58.indexOf(char);
-    if (digit < 0) throw new Error("Invalid base58 instruction data");
-    let carry = digit;
-    for (let i = 0; i < bytes.length; i += 1) {
-      carry += bytes[i] * 58;
-      bytes[i] = carry & 0xff;
-      carry >>= 8;
-    }
-    while (carry > 0) {
-      bytes.push(carry & 0xff);
-      carry >>= 8;
-    }
-  }
-  for (let i = 0; i < value.length - 1 && value[i] === "1"; i += 1) bytes.push(0);
-  return Buffer.from(bytes.reverse());
-}
+const RECEIPT_DATA_LENGTH = 8 + 32 + 32 + 8 + 8 + 2 + 8 + 8 + 8 + 1;
 
 export async function GET(req: NextRequest) {
   try {
@@ -39,32 +18,41 @@ export async function GET(req: NextRequest) {
 
     const programId = new PublicKey(programIdString);
     const connection = new Connection(rpcUrl, "confirmed");
-    const candidates = await connection.getSignaturesForAddress(reference, { limit: 8 }, "confirmed");
-    const discriminator = buyDiscriminator();
+    const receipt = purchaseReceiptPda(reference, programId);
+    const info = await connection.getAccountInfo(receipt, "confirmed");
+    if (!info) return NextResponse.json({ confirmed: false });
+    if (!info.owner.equals(programId)) throw new Error("Purchase receipt has an unexpected owner");
+    if (info.data.length < RECEIPT_DATA_LENGTH) throw new Error("Purchase receipt is malformed");
 
-    for (const candidate of candidates) {
-      if (candidate.err) continue;
-      const tx = await connection.getParsedTransaction(candidate.signature, {
-        commitment: "confirmed",
-        maxSupportedTransactionVersion: 0,
-      });
-      if (!tx || tx.meta?.err) continue;
+    let offset = 8; // Anchor discriminator
+    const buyer = new PublicKey(info.data.subarray(offset, offset + 32)); offset += 32;
+    const recordedReference = new PublicKey(info.data.subarray(offset, offset + 32)); offset += 32;
+    const paidLamports = info.data.readBigUInt64LE(offset); offset += 8;
+    const grossPwrcRaw = info.data.readBigUInt64LE(offset); offset += 8;
+    const transferFeeBps = info.data.readUInt16LE(offset); offset += 2;
+    const transferFeeRaw = info.data.readBigUInt64LE(offset); offset += 8;
+    const netPwrcRaw = info.data.readBigUInt64LE(offset); offset += 8;
+    const slot = info.data.readBigUInt64LE(offset);
 
-      for (const instruction of tx.transaction.message.instructions) {
-        if (!("programId" in instruction) || !instruction.programId.equals(programId)) continue;
-        if (!("data" in instruction) || !("accounts" in instruction)) continue;
-        if (!instruction.accounts.some((key) => key.equals(reference))) continue;
+    if (!recordedReference.equals(reference)) throw new Error("Purchase receipt reference mismatch");
+    if (paidLamports !== expectedLamports) throw new Error("Purchase receipt amount mismatch");
+    if (transferFeeBps !== 200) throw new Error("Unexpected PWRC transfer fee in receipt");
 
-        const data = decodeBase58(instruction.data);
-        if (data.length !== 16 || !data.subarray(0, 8).equals(discriminator)) continue;
-        const paidLamports = data.readBigUInt64LE(8);
-        if (paidLamports !== expectedLamports) continue;
+    const signatures = await connection.getSignaturesForAddress(receipt, { limit: 1 }, "confirmed");
+    const signature = signatures[0]?.signature ?? null;
 
-        return NextResponse.json({ confirmed: true, signature: candidate.signature });
-      }
-    }
-
-    return NextResponse.json({ confirmed: false });
+    return NextResponse.json({
+      confirmed: true,
+      signature,
+      receipt: receipt.toBase58(),
+      buyer: buyer.toBase58(),
+      lamports: paidLamports.toString(),
+      grossPwrcRaw: grossPwrcRaw.toString(),
+      transferFeeBasisPoints: transferFeeBps,
+      transferFeeRaw: transferFeeRaw.toString(),
+      netPwrcRaw: netPwrcRaw.toString(),
+      slot: slot.toString(),
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Invalid payment reference" },

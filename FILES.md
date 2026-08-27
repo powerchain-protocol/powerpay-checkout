@@ -1,6 +1,5 @@
-# PowerPay file index
+# PowerPay files
 
-```text
 .env.example
 .gitignore
 Anchor.toml
@@ -57,6 +56,7 @@ apps/web/lib/pricing/pyth.ts
 apps/web/lib/pricing/types.ts
 apps/web/lib/solana/explorer.ts
 apps/web/lib/solana/sale.ts
+apps/web/lib/solana/token-fee.ts
 apps/web/next-env.d.ts
 apps/web/next.config.ts
 apps/web/package.json
@@ -67,18 +67,21 @@ apps/web/public/favicon.ico
 apps/web/public/icon-maskable.png
 apps/web/public/icon.png
 apps/web/tsconfig.json
-apps/web/tsconfig.tsbuildinfo
 apps/web/utils/helpers.tsx
 apps/web/utils/util.ts
 docs/ARCHITECTURE.md
+docs/DEPENDENCY_POLICY.md
+docs/FEES.md
 docs/PRICE_DATA.md
+docs/PROGRAM_SECURITY.md
 docs/reference/powerpay-checkout-light.png
 package.json
 pnpm-workspace.yaml
 programs/pwrc-sale/Cargo.toml
 programs/pwrc-sale/README.md
 programs/pwrc-sale/src/lib.rs
+scripts/doctor.mjs
 scripts/sale-admin.mjs
+scripts/setup-env.mjs
 tests/pwrc-sale.spec.ts
 tsconfig.anchor.json
-```

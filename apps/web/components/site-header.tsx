@@ -1,16 +1,42 @@
+"use client";
+
 import Link from "next/link";
-import { ArrowDownToLine, ArrowUpFromLine, LockKeyhole } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { ArrowDownToLine, ArrowUpFromLine, ShoppingBag } from "lucide-react";
 import { PowerPayLogo } from "./powerpay-logo";
 import { WalletButton } from "./wallet-button";
+import { ROUTES } from "@/constants/routes";
+import { clientEnv } from "@/env/client";
+
+const navItems = [
+  { href: ROUTES.checkout, label: "Buy", Icon: ShoppingBag },
+  { href: ROUTES.send, label: "Send", Icon: ArrowUpFromLine },
+  { href: ROUTES.receive, label: "Receive", Icon: ArrowDownToLine },
+] as const;
 
 export function SiteHeader() {
+  const pathname = usePathname();
+  const clusterLabel = clientEnv.solanaCluster === "mainnet-beta" ? "Mainnet" : clientEnv.solanaCluster;
+
   return (
     <header className="site-header">
       <PowerPayLogo />
+      <nav className="header-nav" aria-label="PowerPay">
+        {navItems.map(({ href, label, Icon }) => {
+          const active = pathname === href;
+          return (
+            <Link className={`header-link ${active ? "active" : ""}`} href={href} key={href} aria-current={active ? "page" : undefined}>
+              <Icon size={16} />
+              <span>{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
       <div className="header-actions">
-        <Link className="header-link" href="/send"><ArrowUpFromLine size={17}/><span className="optional">Send</span></Link>
-        <Link className="header-link" href="/receive"><ArrowDownToLine size={17}/><span className="optional">Receive</span></Link>
-        <div className="secure-label"><LockKeyhole size={16}/>Secure checkout</div>
+        <div className={`network-badge ${clientEnv.solanaCluster === "mainnet-beta" ? "live" : "test"}`} title={`Solana ${clusterLabel}`}>
+          <span className="network-dot" />
+          <span>Solana {clusterLabel}</span>
+        </div>
         <WalletButton />
       </div>
     </header>

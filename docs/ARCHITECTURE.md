@@ -9,7 +9,8 @@ PowerPay separates **settlement truth** from **market reference data**.
 The sale config PDA is authoritative for:
 
 - treasury
-- PWRC Token-2022 mint
+- canonical PWRC Token-2022 mint (`PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc`)
+- active PWRC transfer-fee policy: 200 bps / 2%
 - gross PWRC per SOL
 - min/max purchase size
 - enabled/disabled state
@@ -41,16 +42,23 @@ Buyer wallet
    ▼
 buy_pwrc(lamports)
    ├── System Program: buyer SOL → treasury
-   └── Token-2022: sale vault PWRC → buyer ATA
+   └── Token-2022: sale vault gross PWRC → buyer ATA
             │
-            └── transfer-fee extension enforced by mint
+            ├── canonical mint enforced
+            ├── active fee must be 200 bps / 2%
+            └── exact TransferCheckedWithFee value asserted
+
+Solana runtime
+   └── network fee charged separately to transaction fee payer
 ```
 
 The transaction cannot leave a paid-but-undelivered application state: either both transfer legs complete or the transaction fails.
 
 ## Token-2022 fee display
 
-`GET /api/quote` loads the Token-2022 mint, resolves the active transfer-fee schedule for the current epoch, and reports gross, fee, and net PWRC. This avoids hard-coding a fee percentage into settlement logic.
+`GET /api/quote` loads the canonical Token-2022 mint, resolves the active transfer-fee schedule for the current epoch, and reports gross, exact token fee, maximum-fee cap, and net PWRC. PowerPay requires the active basis-point policy to be exactly 200 bps (2%), while the actual token amount is still calculated from current on-chain mint state so Token-2022's maximum-fee cap is respected.
+
+The Anchor program repeats this check at execution time and uses `transfer_checked_with_fee`, so a mint fee-policy change between quote review and execution fails closed. Solana's network fee is not part of the 2% token fee and is paid separately by the transaction fee payer.
 
 ## Client composition
 
@@ -93,9 +101,9 @@ Wallet discovery uses Wallet Standard through `@solana/wallet-adapter-react` wit
 
 1. Build and audit the Anchor program.
 2. Deploy to the intended cluster and replace the program id.
-3. Initialize config with the real PWRC Token-2022 mint and treasury.
+3. Initialize config with canonical PWRC mint `PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc` and the intended treasury.
 4. Fund the sale vault.
-5. Verify mint transfer-fee configuration and expected net receipt.
+5. Verify the active Token-2022 transfer-fee policy is 200 bps (2%), inspect the current maximum-fee cap, and confirm expected net receipt.
 6. Configure authenticated Pyth and Birdeye server keys.
 7. Validate market-data freshness and divergence behavior.
 8. Enable the sale only after inventory, quote, treasury and legal checks pass.
