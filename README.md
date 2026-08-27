@@ -159,6 +159,22 @@ Do not use `dangerouslyAllowAllBuilds`. Review new build-script dependencies ind
 
 For environment setup, use `pnpm run setup:env` instead of manual `cp` commands. It resolves paths from the repository root and never overwrites an existing `.env.local`.
 
+
+## v1.6.0 frontend and wallet UX
+
+PowerPay v1.6.0 removes two unnecessary sources of frontend risk and improves the wallet connection surface.
+
+- Removed `experimental.optimizePackageImports` from `next.config.ts`. Next.js already optimizes `lucide-react` by default, while PowerPay imports Web3 Icons from `@web3icons/react/dynamic`; keeping the experimental flag added a production warning without a clear benefit.
+- Added `.next/dev/types/**/*.ts` to the committed TypeScript include list so local development and generated route types agree with Next.js 16's generated configuration.
+- Replaced the stock `@solana/wallet-adapter-react-ui` modal with a PowerPay-owned Wallet Standard modal.
+- Removed the `@solana/wallet-adapter-react-ui` dependency and stylesheet from the web bundle.
+- Added installed-wallet discovery, connecting / connected states, explicit wallet switching, canonical PWRC mint context and Solana cluster context.
+- Added wallet-owned icons with Web3 Icons fallbacks for Phantom, Solflare and Backpack.
+- Added modal focus containment, Escape handling, focus restoration, scroll locking, reduced-motion handling and mobile bottom-sheet behavior.
+- Added non-custodial safety copy: connecting a wallet does not approve a transaction and PowerPay never asks for recovery phrases or private keys.
+
+See `docs/WALLET_CONNECT.md` for the connection-state and accessibility contract.
+
 ## v1.2.0 UI/UX hardening
 
 The checkout is intentionally optimized around one conversion: **buy PWRC with SOL**.

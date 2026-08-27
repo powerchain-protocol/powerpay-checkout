@@ -1,6 +1,8 @@
 # PowerPay build notes
 
-## v1.3.0 validation target
+## v1.6.0 validation target
+
+PowerPay v1.6.0 keeps the v1.4 program hardening and upgrades the Next.js / wallet connection layer. The Anchor program itself is unchanged by this frontend release.
 
 PowerPay v1.4.0 hardens the Buy PWRC path around the canonical Token-2022 mint and explicit fee semantics.
 
@@ -67,3 +69,17 @@ Confirm the canonical mint, 200 bps active transfer fee, treasury, rate, invento
 The `buy_pwrc` instruction account/argument layout changed. After `anchor build`, regenerate the IDL/client artifacts and redeploy the upgraded program before enabling checkout. Validate that the web transaction builder and deployed IDL agree on the new quote-binding arguments and `purchase_receipt` account. Existing `SaleConfig` layout is unchanged, so no sale-config data migration is required.
 
 Verify a devnet purchase produces a program-owned `PurchaseReceipt` PDA and that reusing the same reference fails. Confirm the receipt reports the canonical PWRC mint path, 200 bps fee, exact gross/net amounts and expected SOL amount.
+
+
+## Next.js 16 frontend notes
+
+`apps/web/next.config.ts` no longer opts into `experimental.optimizePackageImports`. `lucide-react` is already optimized by Next.js and Web3 Icons are imported through the package's dynamic entry point. This removes the experiment warning from normal startup/build output.
+
+`apps/web/tsconfig.json` explicitly includes both generated type trees:
+
+```json
+".next/types/**/*.ts",
+".next/dev/types/**/*.ts"
+```
+
+The wallet UI now lives in `components/wallet-connect-modal.tsx`; `@solana/wallet-adapter-react-ui` is no longer required. After updating an existing checkout, run `pnpm install` so the lockfile drops that dependency, then run the frozen-lockfile gate.

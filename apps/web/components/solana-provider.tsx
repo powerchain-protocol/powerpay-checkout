@@ -3,9 +3,9 @@
 import { useMemo } from "react";
 import { clusterApiUrl } from "@solana/web3.js";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 import { clientEnv } from "@/env/client";
+import { WalletConnectModalProvider } from "./wallet-connect-modal";
 
 export function SolanaProvider({ children }: { children: React.ReactNode }) {
   const network = clientEnv.solanaCluster === "mainnet-beta"
@@ -18,7 +18,7 @@ export function SolanaProvider({ children }: { children: React.ReactNode }) {
   return (
     <ConnectionProvider endpoint={endpoint} config={{ commitment: "confirmed" }}>
       <WalletProvider wallets={[]} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
+        <WalletConnectModalProvider>{children}</WalletConnectModalProvider>
       </WalletProvider>
     </ConnectionProvider>
   );

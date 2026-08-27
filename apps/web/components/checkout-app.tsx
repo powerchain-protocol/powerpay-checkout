@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Buffer } from "buffer";
 import { Transaction } from "@solana/web3.js";
 import { QRCodeSVG } from "qrcode.react";
@@ -27,6 +26,7 @@ import {
 import { NetworkIcon, TokenIcon, WalletIcon } from "@web3icons/react/dynamic";
 import { PwrcCoin } from "./pwrc-coin";
 import { MobileCheckoutBar } from "./mobile";
+import { useWalletConnectModal } from "./wallet-connect-modal";
 import { useMarketPrice } from "@/context/market-price-context";
 import {
   CANONICAL_PWRC_MINT,
@@ -106,7 +106,7 @@ export function CheckoutApp() {
   const [signature, setSignature] = useState("");
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
-  const { setVisible } = useWalletModal();
+  const { setVisible } = useWalletConnectModal();
   const { solUsd, loading: marketLoading, error: marketError } = useMarketPrice();
 
   const sol = parsePositiveNumber(amount);

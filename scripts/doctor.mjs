@@ -49,7 +49,7 @@ if (pkg.devDependencies?.["@coral-xyz/anchor"]) {
   console.error("fail  legacy @coral-xyz/anchor must be removed after the Anchor v1 migration");
   failed = true;
 } else {
-  console.log("ok    @coral-xyz/anchor ^0.32.1");
+  console.log("ok    legacy @coral-xyz/anchor is absent");
 }
 
 const workspace = await readFile(resolve(root, "pnpm-workspace.yaml"), "utf8");
@@ -68,6 +68,35 @@ for (const relative of [".env.example", "apps/web/.env.example"]) {
     failed = true;
   } else {
     console.log(`ok    ${relative} canonical PWRC mint`);
+  }
+}
+
+
+const programCargo = await readFile(resolve(root, "programs/pwrc-sale/Cargo.toml"), "utf8");
+for (const crate of ["anchor-lang", "anchor-spl"]) {
+  if (!new RegExp(`${crate}\\s*=\\s*\\{[^}]*version\\s*=\\s*"=1\\.1\\.2"`).test(programCargo)) {
+    console.error(`fail  ${crate} must be exactly =1.1.2`);
+    failed = true;
+  }
+}
+if (!programCargo.includes('rust-version = "1.89"')) {
+  console.error("fail  pwrc-sale must declare Rust 1.89 MSRV for Anchor v1");
+  failed = true;
+} else {
+  console.log("ok    Anchor Rust crates 1.1.2 / Rust 1.89 program policy");
+}
+
+const programSource = await readFile(resolve(root, "programs/pwrc-sale/src/lib.rs"), "utf8");
+for (const required of [
+  `pubkey!("${canonicalPwrcMint}")`,
+  "REQUIRED_PWRC_TRANSFER_FEE_BPS: u16 = 200",
+  "transfer_checked_with_fee",
+  "anchor_lang::system_program::ID",
+  "anchor_spl::token_2022::ID",
+]) {
+  if (!programSource.includes(required)) {
+    console.error(`fail  program invariant missing: ${required}`);
+    failed = true;
   }
 }
 

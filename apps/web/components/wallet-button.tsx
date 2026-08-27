@@ -3,12 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Copy, LogOut, RefreshCw, Wallet } from "lucide-react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { compactAddress } from "@/lib/format";
+import { useWalletConnectModal } from "./wallet-connect-modal";
 
 export function WalletButton() {
   const { publicKey, connected, disconnect, wallet } = useWallet();
-  const { setVisible } = useWalletModal();
+  const { setVisible } = useWalletConnectModal();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -53,7 +53,10 @@ export function WalletButton() {
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <span className="wallet-status-dot" aria-hidden="true" />
+        {wallet?.adapter.icon ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="wallet-button-icon" src={wallet.adapter.icon} alt="" />
+        ) : <span className="wallet-status-dot" aria-hidden="true" />}
         <span className="wallet-name">{wallet?.adapter.name ?? "Wallet"}</span>
         <span className="wallet-address">{compactAddress(publicKey.toBase58())}</span>
         <ChevronDown size={15} />
@@ -61,7 +64,7 @@ export function WalletButton() {
       {open && (
         <div className="wallet-popover" role="menu">
           <div className="wallet-popover-head">
-            <span>{wallet?.adapter.name ?? "Connected wallet"}</span>
+            <span>Connected with {wallet?.adapter.name ?? "wallet"}</span>
             <strong>{compactAddress(publicKey.toBase58(), 5, 5)}</strong>
           </div>
           <button role="menuitem" onClick={() => void copyAddress()}>

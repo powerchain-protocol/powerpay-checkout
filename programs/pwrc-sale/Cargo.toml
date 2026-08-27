@@ -3,6 +3,7 @@ name = "pwrc-sale"
 version = "0.3.0"
 description = "Atomic SOL → canonical PWRC Token-2022 sale program for PowerPay"
 edition = "2021"
+rust-version = "1.89"
 
 [lib]
 crate-type = ["cdylib", "lib"]

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -14,6 +13,7 @@ import {
 import { TokenIcon } from "@web3icons/react/dynamic";
 import { ArrowUpRight, Check, Clipboard, Info, ShieldCheck, Wallet } from "lucide-react";
 import { PwrcCoin } from "./pwrc-coin";
+import { useWalletConnectModal } from "./wallet-connect-modal";
 import { explorerTx } from "@/lib/solana/explorer";
 import { compactAddress, decimalToRaw, formatNumber } from "@/lib/format";
 import { CANONICAL_PWRC_MINT, PWRC_DECIMALS, PWRC_TRANSFER_FEE_PERCENT } from "@/constants/app";
@@ -22,7 +22,7 @@ import { canonicalPwrcMint, quotePwrcTransferFee, type PwrcTransferFeeQuote } fr
 export function SendApp() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
-  const { setVisible } = useWalletModal();
+  const { setVisible } = useWalletConnectModal();
   const [asset, setAsset] = useState<"SOL" | "PWRC">("SOL");
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");

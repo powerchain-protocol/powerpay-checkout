@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { QRCodeSVG } from "qrcode.react";
 import { Check, Copy, Link2, ShieldCheck, Smartphone, Wallet } from "lucide-react";
 import { NetworkIcon } from "@web3icons/react/dynamic";
 import { compactAddress } from "@/lib/format";
+import { useWalletConnectModal } from "./wallet-connect-modal";
 
 export function ReceiveApp() {
   const { publicKey } = useWallet();
-  const { setVisible } = useWalletModal();
+  const { setVisible } = useWalletConnectModal();
   const [amount, setAmount] = useState("");
   const [url, setUrl] = useState("");
   const [copied, setCopied] = useState(false);

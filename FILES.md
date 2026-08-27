@@ -41,6 +41,7 @@ apps/web/components/send-app.tsx
 apps/web/components/site-header.tsx
 apps/web/components/solana-provider.tsx
 apps/web/components/wallet-button.tsx
+apps/web/components/wallet-connect-modal.tsx
 apps/web/constants/app.ts
 apps/web/constants/market.ts
 apps/web/constants/routes.ts
@@ -74,6 +75,7 @@ docs/DEPENDENCY_POLICY.md
 docs/FEES.md
 docs/PRICE_DATA.md
 docs/PROGRAM_SECURITY.md
+docs/WALLET_CONNECT.md
 docs/reference/powerpay-checkout-light.png
 package.json
 pnpm-workspace.yaml

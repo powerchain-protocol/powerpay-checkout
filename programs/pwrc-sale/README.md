@@ -1,6 +1,6 @@
 # PWRC Sale Program
 
-Anchor 0.32.1 program used by PowerPay to exchange SOL for canonical PWRC Token-2022 atomically.
+PowerPay's atomic SOL → PWRC settlement program, migrated to **Anchor 1.1.2** / **Solana 3.1.10**. The Rust crates are pinned exactly to `anchor-lang = =1.1.2` and `anchor-spl = =1.1.2` so the Anchor v1 crate family cannot drift independently.
 
 ## Canonical mint + fee invariant
 
@@ -9,53 +9,49 @@ PWRC mint: PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc
 Decimals:  9
 Token fee: 200 bps / 2% (Token-2022 TransferFeeConfig)
 Network:   Solana fee is separate and paid by the transaction fee payer
+Service:   PowerPay checkout service fee = 0%
 ```
 
-The program fails closed if:
+The program fails closed if a different mint is supplied, the mint is not Token-2022, the mint does not use 9 decimals, `TransferFeeConfig` is absent, or the active epoch fee is not exactly 200 bps.
 
-- a different mint is supplied,
-- the mint is not owned by Token-2022,
-- the mint does not use 9 decimals,
-- the TransferFeeConfig extension is absent, or
-- the active epoch transfer fee is not exactly 200 bps.
-
-Token-2022 can cap the absolute transfer fee through its configured maximum fee. The program calculates the active epoch fee and passes the exact expected value to `transfer_checked_with_fee`, preventing silent fee-policy changes between review and execution.
+Token-2022 can cap the absolute fee through the mint's configured maximum fee. PowerPay calculates the active epoch fee and executes `transfer_checked_with_fee` with the exact expected fee, so a fee-policy race cannot silently change settlement terms.
 
 ## State
 
-One config PDA uses seed `sale` and stores:
+The `sale` PDA stores authority, SOL treasury, canonical PWRC mint, gross PWRC-per-SOL rate, min/max lamports, enabled state and PDA bump. The PDA owns the associated Token-2022 sale vault.
 
-- authority
-- SOL treasury
-- canonical PWRC Token-2022 mint
-- gross PWRC per SOL
-- minimum / maximum lamports
-- enabled state
-- PDA bump
+Each successful checkout also creates a single-use receipt PDA:
 
-The config PDA also owns the associated PWRC sale-vault token account.
+```text
+PDA("purchase", reference)
+```
+
+The receipt records buyer, Solana Pay/order reference, lamports, gross PWRC, fee bps, exact fee, net PWRC, slot and bump. Reusing the same reference fails because the receipt is initialized once.
 
 ## Instructions
 
-- `initialize_sale(rate, min_lamports, max_lamports)` — validates the canonical mint + 2% fee policy, then creates the disabled sale and Token-2022 vault.
-- `update_sale(rate, min_lamports, max_lamports, enabled)` — authority-only rate/limit/pause control; re-validates the canonical mint + active 2% fee policy before updating/enabling.
-- `buy_pwrc(lamports)` — buyer SOL to treasury plus vault PWRC to buyer ATA in one atomic invocation, using exact expected Token-2022 fee semantics.
+- `initialize_sale(rate, min_lamports, max_lamports)` — validates canonical mint + 2% fee policy and creates a disabled sale/vault.
+- `update_sale(rate, min_lamports, max_lamports, enabled)` — authority-only controls; revalidates the canonical mint and fee policy before enabling.
+- `buy_pwrc(lamports, expected_rate, min_net_pwrc_raw, expected_fee_bps)` — quote-bound atomic SOL/PWRC settlement plus immutable purchase receipt.
 - `withdraw_inventory(amount_raw)` — authority-only inventory withdrawal using exact expected Token-2022 fee semantics.
 
-`buy_pwrc` also receives a read-only reference key. PowerPay puts a unique reference in each Solana Pay QR transaction so the checkout can discover the confirmed transaction without relying on an off-chain settlement record.
-
 ## Fee behavior
-
-The buyer's SOL purchase amount and the Solana network fee are distinct:
 
 ```text
 buyer wallet
   ├─ purchase amount ──► configured SOL treasury
-  └─ network fee ──────► Solana runtime / fee mechanism
+  └─ Solana fee ───────► Solana runtime
 
 sale vault
-  └─ gross PWRC ───────► buyer ATA
-       └─ 2% Token-2022 transfer fee (subject to mint maximum-fee cap)
+  └─ gross PWRC ───────► buyer Token-2022 ATA
+       └─ 2% Token-2022 transfer fee
+          (subject to mint maximum-fee cap)
 ```
 
-PowerPay itself currently adds no additional checkout service fee.
+The Solana fee is not a PowerPay treasury charge and is not included in the 2% PWRC fee.
+
+## Anchor v1 migration
+
+Anchor v1 changes CPI construction: `CpiContext::new` / `new_with_signer` receive the target **program ID** rather than the program's `AccountInfo`. This program uses `anchor_lang::system_program::ID` for SOL transfers and `anchor_spl::token_2022::ID` for Token-2022 CPIs.
+
+If an already-deployed Anchor 0.32.x version has a legacy on-chain IDL account, close that legacy IDL account with the **0.32.1 CLI before deploying the Anchor v1 binary**. Anchor v1 removes the legacy IDL instructions and moves IDL storage to Program Metadata. See `docs/ANCHOR_V1_MIGRATION.md`.
