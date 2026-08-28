@@ -1,36 +1,47 @@
-# Dependency Build Policy
+# Dependency build policy
 
-PowerPay uses pnpm 11 with the default fail-closed `strictDepBuilds` behavior. A dependency that introduces an install/build script must receive an explicit decision in `pnpm-workspace.yaml`; otherwise installation fails.
+PowerPay uses pnpm 11 with a fail-closed dependency-build policy. A dependency that introduces an install/build script must receive an explicit decision in `pnpm-workspace.yaml`; unreviewed build scripts stop installation.
 
-## Current reviewed decisions
+## Reviewed decisions
 
 | Package | Decision | Rationale |
 | --- | --- | --- |
-| `bigint-buffer` | allow build | Explicitly approved for the reviewed lockfile. |
-| `bufferutil` | allow build | Explicitly approved native WebSocket accelerator. |
-| `utf-8-validate` | allow build | Explicitly approved native WebSocket validation helper. |
+| `bigint-buffer` | allow | Reviewed dependency in the current lockfile. |
+| `bufferutil` | allow | Reviewed native WebSocket accelerator. |
+| `utf-8-validate` | allow | Reviewed native WebSocket validation helper. |
 
-These approvals are explicit and scoped. They are different from globally allowing dependency build scripts. Unreviewed build scripts continue to stop installation.
+These decisions are scoped approvals, not a global permission to execute dependency build scripts.
 
-Do not enable `dangerouslyAllowAllBuilds`. When a new dependency appears, review the exact package/version and then add an explicit `true` or `false` decision.
+Do **not** enable `dangerouslyAllowAllBuilds`.
+
+## Review process for a new build script
+
+1. identify the direct/transitive dependency that introduced it
+2. inspect the exact package/version and install script
+3. determine whether the native build is required for correctness or only optimization
+4. add an explicit `true` or `false` decision to `pnpm-workspace.yaml`
+5. regenerate/commit the lockfile when dependency state changes
+6. verify a frozen install succeeds
 
 ## Transitive deprecation warnings
 
-`glob@10.5.0` and `uuid@8.3.2` are currently transitive dependencies. They are warnings, not the cause of `ERR_PNPM_IGNORED_BUILDS`. Remove them by upgrading the upstream dependency that owns them when a compatible release is available; avoid forcing an incompatible major through a root override.
+`glob@10.5.0` and `uuid@8.3.2` may appear as transitive deprecation warnings in the current graph. They are not the cause of `ERR_PNPM_IGNORED_BUILDS`.
+
+Prefer upgrading the upstream dependency that owns a deprecated transitive package. Avoid unsafe root overrides solely to silence warnings.
 
 ## Reproducible install
 
-On the first network-enabled install, run:
+Initial network-enabled setup:
 
-```sh
+```bash
 pnpm run doctor
 pnpm run setup:env
 pnpm install
 ```
 
-Commit the resulting `pnpm-lock.yaml`, then use:
+Release verification:
 
-```sh
+```bash
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build

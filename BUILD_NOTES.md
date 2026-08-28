@@ -1,34 +1,40 @@
 # PowerPay build notes
 
-## v1.6.0 validation target
+## Current validation target
 
-PowerPay v1.6.0 keeps the v1.4 program hardening and upgrades the Next.js / wallet connection layer. The Anchor program itself is unchanged by this frontend release.
-
-PowerPay v1.4.0 hardens the Buy PWRC path around the canonical Token-2022 mint and explicit fee semantics.
+Repository release line: **PowerPay v1.6.0**.
 
 ### Toolchain
 
-- Node: 20+ (project package manager remains `pnpm@11.24.0`)
-- TypeScript: 5.9.3
-- Anchor CLI / crates / TypeScript package: 0.32.1
-- Solana toolchain pinned in `Anchor.toml`: 2.3.0
-- `anchor-spl`: 0.32.1 with `associated_token`, `token_2022`, and `token_2022_extensions`
+```text
+Node:                     >=20.18
+pnpm:                     11.24.0
+TypeScript:               5.9.3
+Anchor CLI:               1.1.2
+anchor-lang:              =1.1.2
+anchor-spl:               =1.1.2
+Anchor TypeScript client: @anchor-lang/core@1.1.2
+Solana CLI:               3.1.10
+```
+
+The workspace is migrated off the legacy `@coral-xyz/anchor` TypeScript package.
 
 ### Canonical PWRC invariant
 
 ```text
-Mint: PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc
-Decimals: 9
-Active Token-2022 transfer fee: 200 bps / 2%
-PowerPay checkout service fee: 0%
-Solana network fee: separate, paid by transaction fee payer
+Mint:                PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc
+Decimals:            9
+Token program:       Token-2022
+Active transfer fee: 200 bps / 2%
+PowerPay service fee: 0%
+Solana network fee:  separate; transaction fee payer pays it
 ```
 
-The program and web application fail closed on a different mint. Program instructions also fail if the current Token-2022 fee policy is missing or not exactly 200 bps.
+Program and web paths fail closed on a different mint. Program execution also fails if the active Token-2022 fee policy is missing or differs from 200 bps.
 
-### Dependency builds
+## pnpm dependency builds
 
-The reviewed pnpm workspace explicitly approves:
+Reviewed native install scripts are explicit in `pnpm-workspace.yaml`:
 
 ```yaml
 allowBuilds:
@@ -37,49 +43,72 @@ allowBuilds:
   utf-8-validate: true
 ```
 
-Do not use `dangerouslyAllowAllBuilds`. New install scripts should remain blocked until reviewed.
+Do not use `dangerouslyAllowAllBuilds`. New dependency scripts should remain blocked until individually reviewed.
 
-### Release validation
+Transitive deprecation notices such as `glob@10.5.0` or `uuid@8.3.2` are warnings, not reasons to bypass install policy.
+
+## Environment setup
+
+Use:
 
 ```bash
-corepack enable
-corepack prepare pnpm@11.24.0 --activate
-pnpm run doctor
 pnpm run setup:env
-pnpm install
+```
+
+instead of manual `cp` commands. It resolves repository paths and does not overwrite existing `.env.local` files.
+
+## Web validation
+
+```bash
+pnpm run doctor
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
+```
+
+Next.js notes:
+
+- `experimental.optimizePackageImports` is not required by this project.
+- `apps/web/tsconfig.json` includes `.next/types/**/*.ts` and `.next/dev/types/**/*.ts`.
+- the wallet UI is implemented in `components/wallet-connect-modal.tsx`.
+- `@solana/wallet-adapter-react-ui` is intentionally not required.
+
+## Program validation
+
+```bash
 cargo fmt --check
 anchor build
 anchor test
 ```
 
-Before `PWRC_SALE_ENABLED=true`, also run:
+After a program change, regenerate IDL/types and verify the web builder matches the deployed instruction/account layout.
+
+If the predecessor deployment is Anchor 0.32.x and retains a legacy IDL account, complete `docs/ANCHOR_V1_MIGRATION.md` before upgrading the binary.
+
+## Sale validation
+
+Before enabling a sale:
 
 ```bash
 pnpm sale:inspect
 ```
 
-Confirm the canonical mint, 200 bps active transfer fee, treasury, rate, inventory, limits, cluster, and deployed program id. An upgrade of an existing deployed program should be exercised on devnet/staging before production enablement.
+Confirm:
 
+- cluster
+- deployed program id
+- canonical PWRC mint
+- 9 decimals
+- active 200 bps fee
+- current maximum-fee cap
+- treasury
+- PWRC-per-SOL rate
+- min/max limits
+- vault inventory
+- enabled state
 
-## v1.4 program migration checks
+Exercise browser-wallet and Solana Pay purchases on devnet/staging before production enablement.
 
-The `buy_pwrc` instruction account/argument layout changed. After `anchor build`, regenerate the IDL/client artifacts and redeploy the upgraded program before enabling checkout. Validate that the web transaction builder and deployed IDL agree on the new quote-binding arguments and `purchase_receipt` account. Existing `SaleConfig` layout is unchanged, so no sale-config data migration is required.
+## Release checklist
 
-Verify a devnet purchase produces a program-owned `PurchaseReceipt` PDA and that reusing the same reference fails. Confirm the receipt reports the canonical PWRC mint path, 200 bps fee, exact gross/net amounts and expected SOL amount.
-
-
-## Next.js 16 frontend notes
-
-`apps/web/next.config.ts` no longer opts into `experimental.optimizePackageImports`. `lucide-react` is already optimized by Next.js and Web3 Icons are imported through the package's dynamic entry point. This removes the experiment warning from normal startup/build output.
-
-`apps/web/tsconfig.json` explicitly includes both generated type trees:
-
-```json
-".next/types/**/*.ts",
-".next/dev/types/**/*.ts"
-```
-
-The wallet UI now lives in `components/wallet-connect-modal.tsx`; `@solana/wallet-adapter-react-ui` is no longer required. After updating an existing checkout, run `pnpm install` so the lockfile drops that dependency, then run the frozen-lockfile gate.
+The complete ordered release gate is maintained in [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md).

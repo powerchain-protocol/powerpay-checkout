@@ -1,8 +1,8 @@
-# Anchor v1 migration — PowerPay
+# Anchor v1 migration
 
-PowerPay v1.5.0 migrates the PWRC sale workspace from Anchor 0.32.1 to **Anchor 1.1.2** and pins the recommended **Solana 3.1.10** toolchain.
+PowerPay's current program workspace is already migrated to **Anchor 1.1.2** and **Solana CLI 3.1.10**.
 
-## Dependency migration
+## Current dependency set
 
 ```text
 Rust
@@ -10,49 +10,47 @@ anchor-lang = =1.1.2
 anchor-spl  = =1.1.2
 
 TypeScript
-@coral-xyz/anchor  →  @anchor-lang/core@1.1.2
+@anchor-lang/core = 1.1.2
 
 Toolchain
-Anchor CLI 1.1.2
-Solana CLI 3.1.10
-Node >=20.18
-Rust >=1.89
+Anchor CLI = 1.1.2
+Solana CLI = 3.1.10
+Rust       >= 1.89
+Node       >= 20.18
 ```
 
-`@coral-xyz/anchor` is intentionally removed. Anchor v1 renamed the TypeScript package to `@anchor-lang/core`. The current Anchor TypeScript client remains compatible with the legacy `@solana/web3.js` v1 line used by PowerPay.
+The legacy `@coral-xyz/anchor` TypeScript client is intentionally absent.
 
-## CPI migration
+## CPI changes already applied
 
-Anchor v1 removed the redundant program `AccountInfo` from `CpiContext`. CPI construction now receives the target program ID. PowerPay therefore uses:
+Anchor v1 CPI construction uses the target program ID in `CpiContext`. PowerPay's program uses the v1-compatible construction for System Program and Token-2022 CPIs.
 
-```rust
-CpiContext::new(anchor_lang::system_program::ID, accounts)
-CpiContext::new_with_signer(anchor_spl::token_2022::ID, accounts, signer_seeds)
-```
+The Token-2022 transfer path continues to use exact checked-fee semantics and the canonical PWRC mint invariant.
 
-The Token-2022 `TransferCheckedWithFee` account set still includes `token_program_id` because the SPL transfer-fee wrapper uses it when building/invoking the extension instruction.
+## Legacy deployed-program migration gate
 
-## Existing deployed program: IDL migration gate
+This section applies **only** when upgrading an already-deployed Anchor 0.32.x PowerPay program that still owns a legacy on-chain IDL account.
 
-**Do this before upgrading any deployed Anchor 0.32.x program that already has a legacy IDL account:**
+Before installing the v1 binary:
 
-1. Keep/use the Anchor **0.32.1 CLI**.
-2. Record/export the existing IDL and deployment metadata.
-3. Close the legacy on-chain IDL account using the old CLI while the old program still exposes the legacy IDL management instructions.
-4. Switch the workspace/toolchain to Anchor 1.1.2.
-5. `anchor build` and regenerate the IDL/types.
-6. Run the full devnet/staging suite, including quote binding, single-use receipt replay rejection, 2% fee enforcement and Solana Pay confirmation.
-7. Upgrade the program binary with the existing upgrade authority.
-8. Publish/upgrade the v1 IDL through Anchor's Program Metadata flow.
-9. Verify the deployed bytecode and only then enable the sale.
+1. use Anchor CLI `0.32.1`
+2. export/record existing IDL and deployment metadata
+3. close the legacy on-chain IDL account while the old binary still exposes legacy IDL management instructions
+4. switch the local workspace/toolchain to Anchor `1.1.2`
+5. build and regenerate IDL/types
+6. run the full devnet/staging suite
+7. upgrade the program binary with the existing upgrade authority
+8. publish/update v1 IDL metadata using the current Anchor flow
+9. verify deployed program id, bytecode, IDL/types, sale config, and receipt decoding
+10. only then re-enable checkout
 
-Skipping step 3 can strand the legacy IDL account after the v1 binary removes the old IDL management instructions.
+Skipping the legacy-IDL close step can strand the old IDL account after the v1 binary removes the legacy instructions.
 
-## Program data compatibility
+## Program-data compatibility
 
-The `SaleConfig` data layout is unchanged by the Anchor framework migration. PowerPay's newer `buy_pwrc` instruction and `PurchaseReceipt` PDA must still be deployed and its regenerated IDL/client artifacts must match the web transaction builder before checkout is enabled.
+The framework migration does not by itself require a `SaleConfig` data-layout migration in this repository. However, the deployed binary, generated IDL/types, and web transaction builder must always agree on the current `buy_pwrc` account and argument layout.
 
-## Release commands
+## Validation
 
 ```bash
 node --version
@@ -70,4 +68,13 @@ anchor build
 anchor test
 ```
 
-For Anchor v1 local testing, Surfpool is the default backend. Use `anchor test --validator legacy` only when intentionally retaining `solana-test-validator`.
+For an upgraded deployed program, additionally verify:
+
+- canonical PWRC mint
+- 200 bps active fee
+- exact fee calculation
+- quote binding
+- one-time receipt creation
+- replay rejection
+- browser-wallet purchase
+- Solana Pay purchase/status resolution

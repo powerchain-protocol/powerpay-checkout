@@ -1,57 +1,87 @@
 # PowerPay wallet connection
 
-PowerPay uses `@solana/wallet-adapter-react` for connection state and Wallet Standard discovery. It intentionally passes `wallets={[]}` so compatible Wallet Standard wallets are discovered without bundling the legacy `@solana/wallet-adapter-wallets` aggregate package.
+PowerPay uses `@solana/wallet-adapter-react` for connection state and **Wallet Standard discovery**. The application passes `wallets={[]}` so compatible wallets can be discovered without bundling the legacy aggregate wallet-adapter package.
 
-The application does **not** use the generic `@solana/wallet-adapter-react-ui` modal. `components/wallet-connect-modal.tsx` is the PowerPay-owned presentation layer and keeps wallet state inside the Solana provider.
+The stock `@solana/wallet-adapter-react-ui` modal is not used. `components/wallet-connect-modal.tsx` owns the PowerPay connection experience while `components/solana-provider.tsx` owns network and provider state.
+
+## Provider composition
+
+```text
+ConnectionProvider
+  └─ WalletProvider wallets={[]} autoConnect
+      └─ WalletConnectModalProvider
+          └─ application
+```
+
+The configured RPC endpoint comes from client environment configuration, with `clusterApiUrl(...)` as the fallback.
 
 ## UX contract
 
-The connection dialog must make four things explicit before the user selects a wallet:
+The modal must make these facts clear before wallet selection:
 
-1. network / cluster
+1. active Solana cluster
 2. canonical PWRC mint context
-3. wallet connection is non-custodial
-4. connecting a wallet is not transaction approval
+3. connection is non-custodial
+4. wallet connection is not transaction approval
 
-Detected Wallet Standard wallets are listed first. Phantom, Solflare and Backpack are shown as common supported wallets through `@web3icons/react`, but PowerPay does not hard-code those wallets as adapters.
+Detected/available Wallet Standard wallets are ranked ahead of unavailable wallets. Phantom, Solflare, and Backpack receive familiar Web3 Icons when their names match; actual connection still uses discovered adapters rather than hard-coded wallet implementations.
 
-## Connection flow
+## Connection states
 
 ```text
-Connect wallet
+closed
   ↓
-Wallet Standard discovery
+open
   ↓
-select(adapter.name)
+wallet discovered / unavailable
   ↓
-wallet becomes active
+wallet selected
   ↓
-connect()
-  ↓
-wallet-owned approval UI
-  ↓
-public key available to PowerPay
+connecting
+  ├─ rejected/error → error state
+  └─ connected      → close + public key available
 ```
 
-Changing wallets disconnects the existing browser wallet before selecting the next adapter. Transaction approval is always a separate wallet-owned step.
+Changing wallets disconnects the active adapter before selecting and connecting the replacement.
 
-## Mobile
+## Connected-wallet menu
 
-The upstream WalletProvider can expose Solana Mobile Wallet Adapter when appropriate. The PowerPay dialog is rendered as a bottom sheet below 480 px and respects `env(safe-area-inset-bottom)`.
+The application exposes explicit account actions rather than turning the wallet button into an implicit disconnect control:
+
+- copy address
+- change wallet
+- disconnect
+
+Purchase and send operations still require a separate wallet signature.
+
+## Mobile behavior
+
+The PowerPay modal behaves as a bottom sheet on narrow screens and respects safe-area insets. Wallet availability remains adapter-driven, allowing mobile-wallet integrations exposed by the provider/runtime where supported.
+
+Mobile checkout actions live in `components/mobile.tsx`; opening a wallet or Solana Pay from the same device must not require scanning the device's own QR code.
 
 ## Accessibility
 
-The modal provides:
+The modal includes:
 
-- `role="dialog"` and `aria-modal="true"`
-- title and description relationships
+- `role="dialog"`
+- `aria-modal="true"`
+- labelled title/description
 - Escape-to-close
-- focus restoration after closing
-- keyboard focus containment
-- reduced-motion support
-- 44 px-class touch targets
-- explicit connecting, connected and error states
+- focus containment
+- focus restoration
+- body scroll lock while open
+- keyboard-operable wallet rows
+- reduced-motion handling
+- explicit loading/error/connected text states
+- touch targets suitable for mobile interaction
 
-## Security
+## Security contract
 
-PowerPay never asks for a seed phrase, private key or recovery phrase. A connected public key is an account-selection signal only. Purchases and sends still require the wallet to sign the final Solana transaction.
+PowerPay never asks for:
+
+- recovery phrase
+- seed phrase
+- private key
+
+A public key indicates the selected account only. The wallet remains responsible for showing and authorizing transaction signatures.

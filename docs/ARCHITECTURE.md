@@ -1,112 +1,161 @@
 # PowerPay architecture
 
-## Truth boundaries
+PowerPay separates four concerns: **settlement**, **wallet authorization**, **market reference data**, and **presentation**. Only the on-chain sale program is settlement authority.
 
-PowerPay separates **settlement truth** from **market reference data**.
+## System overview
 
-### Settlement truth
+```text
+Browser / mobile wallet
+        │
+        ├─ Wallet Standard connection
+        ├─ browser-wallet transaction signing
+        └─ Solana Pay transaction request
+        │
+        ▼
+Next.js application
+        ├─ quote API
+        ├─ transaction builder
+        ├─ Solana Pay request/status APIs
+        └─ SOL/USD reference API
+        │
+        ▼
+PWRC sale program (Anchor 1.1.2)
+        ├─ SaleConfig PDA
+        ├─ Token-2022 sale vault
+        └─ PurchaseReceipt PDA per order/reference
+```
 
-The sale config PDA is authoritative for:
+## Settlement truth
 
-- treasury
-- canonical PWRC Token-2022 mint (`PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc`)
-- active PWRC transfer-fee policy: 200 bps / 2%
-- gross PWRC per SOL
-- min/max purchase size
-- enabled/disabled state
-- sale inventory boundary
+The `SaleConfig` PDA is authoritative for:
 
-The server builds but does not sign the purchase transaction. The buyer wallet is the payer and signer. Browser-wallet and Solana Pay QR paths share the same transaction builder and on-chain program.
+- configured SOL treasury
+- canonical PWRC Token-2022 mint
+- gross PWRC-per-SOL rate
+- minimum / maximum purchase size
+- enabled state
+- sale-vault ownership boundary
 
-### Market reference data
+Canonical PWRC:
+
+```text
+PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc
+```
+
+The active PWRC transfer-fee policy must be 200 bps / 2% and the mint must use 9 decimals.
+
+## Market-reference boundary
 
 ```text
 Pyth Hermes ───────┐
-                   ├─> /api/market/sol-usd ─> MarketPriceContext ─> checkout UI
-Birdeye ───────────┘           │
-                               ├─ freshness / source
-                               └─ divergence bps
+                   ├─► /api/market/sol-usd ─► MarketPriceContext ─► UI
+Birdeye ───────────┘             │
+                                 ├─ source
+                                 ├─ freshness
+                                 └─ divergence bps
 
-sale config PDA ────────────────────────────────────────────────> executable PWRC rate
+SaleConfig PDA ───────────────────────────────────────► executable PWRC/SOL rate
 ```
 
-Pyth is preferred when fresh. Birdeye acts as independent corroboration/fallback. Provider divergence is exposed to the UI and can downgrade the market-data health indicator. Neither source is permitted to override the on-chain sale rate.
+Pyth is the preferred observation when fresh. Birdeye provides independent corroboration/fallback. A configured fallback may be displayed when both are unavailable, but it must be visibly marked reference-only.
 
-All provider keys remain in server environment variables.
+No market provider may mutate the sale rate.
 
-## Atomic purchase
+## Buy path
+
+Both browser-wallet and Solana Pay paths converge on the same transaction builder.
 
 ```text
-Buyer wallet
-   │ signs
-   ▼
-buy_pwrc(lamports)
-   ├── System Program: buyer SOL → treasury
-   └── Token-2022: sale vault gross PWRC → buyer ATA
-            │
-            ├── canonical mint enforced
-            ├── active fee must be 200 bps / 2%
-            └── exact TransferCheckedWithFee value asserted
-
-Solana runtime
-   └── network fee charged separately to transaction fee payer
+quote
+  ↓
+review gross / fee / net / rate
+  ↓
+transaction builder
+  ↓
+wallet signature
+  ↓
+buy_pwrc(...)
+  ├─ SOL → treasury
+  ├─ gross PWRC → buyer ATA
+  └─ PurchaseReceipt PDA
 ```
 
-The transaction cannot leave a paid-but-undelivered application state: either both transfer legs complete or the transaction fails.
+The buyer remains the transaction fee payer. The server builds unsigned transactions and does not hold the buyer's signing key.
 
-## Token-2022 fee display
+## Solana Pay path
 
-`GET /api/quote` loads the canonical Token-2022 mint, resolves the active transfer-fee schedule for the current epoch, and reports gross, exact token fee, maximum-fee cap, and net PWRC. PowerPay requires the active basis-point policy to be exactly 200 bps (2%), while the actual token amount is still calculated from current on-chain mint state so Token-2022's maximum-fee cap is respected.
+A Scan To Pay request contains a unique reference. The scanning wallet requests an unsigned transaction from PowerPay and signs it locally. After settlement, status verification resolves the program-owned `PurchaseReceipt` PDA derived from that reference.
 
-The Anchor program repeats this check at execution time and uses `transfer_checked_with_fee`, so a mint fee-policy change between quote review and execution fails closed. Solana's network fee is not part of the 2% token fee and is paid separately by the transaction fee payer.
+This prevents a transaction from being considered settled solely because a reference key appears somewhere in its account list.
 
-## Client composition
+## Token-2022 fee handling
+
+`GET /api/quote` reads the canonical mint's active transfer-fee configuration and reports:
+
+- gross PWRC
+- fee basis points
+- exact expected token fee
+- maximum-fee cap
+- net PWRC
+
+The on-chain program repeats the fee-policy validation and executes an exact checked-fee transfer. A fee change between quote review and execution fails closed.
+
+The Solana runtime network fee is separate from the 2% PWRC fee.
+
+## Web composition
 
 ```text
 RootLayout
   └─ AppProviders
       └─ SolanaProvider
           ├─ ConnectionProvider
-          ├─ WalletProvider (Wallet Standard)
-          └─ WalletModalProvider
+          ├─ WalletProvider (Wallet Standard discovery)
+          └─ WalletConnectModalProvider
 
 /checkout
   └─ MarketPriceProvider
-      └─ 15s SOL/USD refresh
+      └─ checkout state + responsive mobile action surface
 ```
 
-`components/mobile.tsx` owns the mobile sticky purchase action so responsive behavior does not duplicate settlement logic.
+`components/mobile.tsx` owns phone-specific sticky checkout actions. It reuses the same quote and transaction logic as desktop rather than implementing a second settlement path.
 
-## Error boundary
+## Error and degradation model
 
-- `lib/errors.ts` defines typed API errors and consistent JSON error responses.
-- `app/error.tsx` is the client route boundary for recoverable render failures.
-- `app/loading.tsx` is the App Router loading surface.
-- Upstream market-data failure does not enable or disable settlement; it only degrades the reference-data indicator.
-- On-chain quote failure can be configured to fail closed with `POWERPAY_REQUIRE_ONCHAIN_QUOTE=true`.
+- `lib/errors.ts` defines typed application/API errors.
+- `app/error.tsx` handles recoverable route rendering failures.
+- `app/loading.tsx` provides the App Router loading state.
+- Market-data failure degrades display/reference health only.
+- On-chain quote failure can fail closed with `POWERPAY_REQUIRE_ONCHAIN_QUOTE=true`.
+- Wallet rejection never becomes an application-level settlement success.
 
-## Legal surfaces
+## Client/server boundaries
+
+Browser-safe configuration lives under `env/client.ts`. Secrets and server-only settings live under `env/server.ts` / server routes.
+
+Never expose:
+
+- Pyth API keys
+- Birdeye API keys
+- operator wallet material
+- sale administration authority secrets
+
+## Legal routes
 
 - `/terms-of-sale`
 - `/cookies`
 - `/disclaimer`
 
-These are deployment templates and should be reviewed for the intended jurisdiction and sale structure before production use.
+These are deployment templates and require jurisdiction-specific review before production use.
 
-## Wallets and icons
+## Production architecture gates
 
-Wallet discovery uses Wallet Standard through `@solana/wallet-adapter-react` with `wallets={[]}`. Visual identities use `@web3icons/react/dynamic` for Solana, SOL, Phantom, Solflare and Backpack.
-
-## Production gates
-
-1. Build and audit the Anchor program.
-2. Deploy to the intended cluster and replace the program id.
-3. Initialize config with canonical PWRC mint `PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc` and the intended treasury.
-4. Fund the sale vault.
-5. Verify the active Token-2022 transfer-fee policy is 200 bps (2%), inspect the current maximum-fee cap, and confirm expected net receipt.
-6. Configure authenticated Pyth and Birdeye server keys.
-7. Validate market-data freshness and divergence behavior.
-8. Enable the sale only after inventory, quote, treasury and legal checks pass.
-9. Set a private production RPC and public HTTPS `NEXT_PUBLIC_APP_URL`.
-10. Set `POWERPAY_REQUIRE_ONCHAIN_QUOTE=true`.
-11. Exercise browser-wallet and QR purchases on devnet/staging before mainnet.
+1. audited program binary and known upgrade authority
+2. canonical PWRC mint and 200 bps active fee
+3. correct program id / cluster
+4. funded vault and correct treasury
+5. private/production RPC strategy
+6. authenticated market-data providers
+7. public HTTPS Solana Pay origin
+8. fail-closed on-chain quote mode
+9. staging verification of browser-wallet and QR purchase paths
+10. settlement receipt verification and operational monitoring

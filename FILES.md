@@ -1,5 +1,8 @@
-# PowerPay files
+# PowerPay file inventory
 
+Generated from the current repository tree. Build artifacts, dependency directories, and local secrets are excluded.
+
+```text
 .env.example
 .gitignore
 Anchor.toml
@@ -70,11 +73,15 @@ apps/web/public/icon.png
 apps/web/tsconfig.json
 apps/web/utils/helpers.tsx
 apps/web/utils/util.ts
+docs/ANCHOR_V1_MIGRATION.md
 docs/ARCHITECTURE.md
+docs/CONFIGURATION.md
 docs/DEPENDENCY_POLICY.md
 docs/FEES.md
 docs/PRICE_DATA.md
 docs/PROGRAM_SECURITY.md
+docs/README.md
+docs/RELEASE_CHECKLIST.md
 docs/WALLET_CONNECT.md
 docs/reference/powerpay-checkout-light.png
 package.json
@@ -87,3 +94,4 @@ scripts/sale-admin.mjs
 scripts/setup-env.mjs
 tests/pwrc-sale.spec.ts
 tsconfig.anchor.json
+```
