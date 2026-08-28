@@ -74,8 +74,6 @@ resolveServerSolanaNetwork()
 
 This prevents a caller from redirecting server transaction construction to an unreviewed RPC/program pair.
 
-RPC is a read/transport endpoint only. Health checks use an 8-second timeout, bounded JSON parsing and explicit error/latency state. Changing the selected RPC cannot change the deployed program, SaleConfig, treasury, mint, fee policy or signed settlement terms.
-
 ## Devnet
 
 Purpose:
@@ -148,7 +146,6 @@ The sale program rejects any other mint and requires:
 - 9 decimals
 - TransferFeeConfig extension
 - active transfer fee = 200 bps / 2%
-- PowerPay program service-fee policy = 200 bps / 2% of the base SOL purchase
 
 Before enabling a network, verify that this mint exists and has the required configuration on that cluster.
 
@@ -161,12 +158,11 @@ For `mainnet-beta`:
 3. canonical PWRC mint verified on-chain
 4. treasury verified
 5. sale vault funded
-6. PWRC transfer fee verified at current epoch
-7. PowerPay 2% service-fee program ABI verified
-8. sale limits and rate reviewed
-9. `POWERPAY_REQUIRE_ONCHAIN_QUOTE=true`
-10. HTTPS `NEXT_PUBLIC_APP_URL`
-11. browser wallet purchase tested with controlled value
-12. Solana Pay Scan To Pay tested end-to-end
-13. PurchaseReceipt fee/amount verification tested
-14. explorer links confirmed on Mainnet Beta
+6. transfer fee verified at current epoch
+7. sale limits and rate reviewed
+8. `POWERPAY_REQUIRE_ONCHAIN_QUOTE=true`
+9. HTTPS `NEXT_PUBLIC_APP_URL`
+10. browser wallet purchase tested with controlled value
+11. Solana Pay Scan To Pay tested end-to-end
+12. PurchaseReceipt verification tested
+13. explorer links confirmed on Mainnet Beta

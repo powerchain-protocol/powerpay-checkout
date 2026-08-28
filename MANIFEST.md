@@ -88,11 +88,3 @@ pnpm check
 | Mainnet Beta | `mainnet-beta` | production assets |
 
 Anchor refers to the production deployment target as `mainnet`; the web/runtime identifier remains `mainnet-beta`.
-
-## Dependency security additions
-
-- `packages/bigint-buffer/` — reviewed private pure-JS compatibility replacement for the abandoned vulnerable native package.
-- `scripts/check-dependency-security.mjs` — lockfile and workspace security-policy gate.
-- `.github/dependabot.yml` — scheduled dependency updates.
-- `.github/workflows/security.yml` — frozen install, audit, dependency-security and full check gate.
-- `docs/DEPENDENCY_SECURITY.md` — remediation rationale and verification procedure.

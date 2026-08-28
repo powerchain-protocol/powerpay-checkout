@@ -262,7 +262,3 @@ Then execute the network-specific checks in [`docs/RELEASE_CHECKLIST.md`](docs/R
 PowerPay is non-custodial. The web/server components construct and inspect transactions; the buyer wallet signs them. Never place wallet seed phrases, private keys, operator keypairs, Pyth API keys or Birdeye API keys in browser-exposed environment variables.
 
 Legal documents in this repository are deployment templates and require jurisdiction-specific review before production use.
-
-## Dependency security
-
-See [`docs/DEPENDENCY_SECURITY.md`](docs/DEPENDENCY_SECURITY.md) for the current Dependabot remediation policy, lockfile regeneration procedure, and legacy Solana compatibility bridge.

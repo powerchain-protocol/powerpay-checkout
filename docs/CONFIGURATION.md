@@ -72,18 +72,6 @@ Never expose these values with `NEXT_PUBLIC_` prefixes.
 
 Market data does not control the sale-program rate.
 
-## Canonical fee policy
-
-The fee percentages are protocol/application invariants, **not environment-tunable deployment variables**:
-
-```text
-PowerPay service fee: 200 bps / 2% of base SOL purchase
-PWRC Token-2022 fee:  200 bps / 2% (subject to mint maximum-fee cap)
-Solana network fee:   runtime fee, separate
-```
-
-Canonical constants are defined in `apps/web/constants/price-rates.ts`; the on-chain service-fee math is defined in `programs/settlements/` and enforced by `programs/pwrc-sale`. A policy change requires an intentional program/client release and audit, not an environment edit.
-
 ## Operator variables
 
 | Variable | Purpose |
@@ -145,6 +133,5 @@ They are fallback-only. New deployments should use the network-specific variable
 3. Browser callers cannot choose arbitrary RPC/program endpoints.
 4. Mainnet cannot execute from preview-only quote state.
 5. PWRC mint remains canonical and Token-2022 fee policy remains 200 bps.
-6. PowerPay service fee remains canonical at 200 bps and cannot be overridden by a request/RPC/environment variable.
-7. Market data never becomes settlement authority.
-8. Operator secrets and market API keys never enter browser-visible variables.
+6. Market data never becomes settlement authority.
+7. Operator secrets and market API keys never enter browser-visible variables.

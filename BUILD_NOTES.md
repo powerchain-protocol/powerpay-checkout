@@ -61,9 +61,11 @@ pnpm install --frozen-lockfile
 
 ## pnpm native build policy
 
-`pnpm-workspace.yaml` records explicit reviewed build policy for `bufferutil` and `utf-8-validate`. The vulnerable upstream `bigint-buffer` native package is replaced by a private pure-JS workspace implementation with no install script, so it is intentionally **not** granted build permission.
+`pnpm-workspace.yaml` records explicit reviewed build policy for:
 
-Automatic peer installation is disabled for this browser-only workspace, and only the unused `react-native` peer is explicitly ignored. This keeps the React Native/Metro/`image-size` subtree out of the intended lockfile.
+- `bigint-buffer`
+- `bufferutil`
+- `utf-8-validate`
 
 If the lockfile introduces another package with a build script, pnpm should fail closed until that dependency is reviewed.
 

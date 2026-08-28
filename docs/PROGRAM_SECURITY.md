@@ -2,146 +2,118 @@
 
 Canonical PowerPay release: **1.0.0**.
 
-The PWRC sale program fails closed whenever asset identity, quote terms, fee policy, network mapping, or settlement evidence differs from the buyer-reviewed state.
+The PWRC sale program is designed to fail closed when settlement terms or canonical asset configuration differ from the reviewed checkout state.
 
 ## Toolchain boundary
 
+Current repository program toolchain:
+
 ```text
-Anchor CLI:               1.1.2
-anchor-lang:              =1.1.2
-anchor-spl:               =1.1.2
-Anchor TypeScript client: @anchor-lang/core@1.1.2
-Solana CLI:               3.1.10
+Anchor CLI:              1.1.2
+anchor-lang:             =1.1.2
+anchor-spl:              =1.1.2
+Anchor TypeScript client @anchor-lang/core@1.1.2
+Solana CLI:              3.1.10
 ```
 
-The legacy `@coral-xyz/anchor` TypeScript package is not part of the canonical workspace.
+The legacy `@coral-xyz/anchor` TypeScript package is not part of the current workspace.
 
 ## Canonical asset
 
+The sale accepts only:
+
 ```text
-PWRC mint:        PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc
-Decimals:         9
-Token program:    Token-2022
-PWRC transfer fee 200 bps / 2%
+PWRC mint: PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc
+Decimals:  9
+Program:   Token-2022
+Fee:       200 bps / 2%
 ```
 
-Execution fails if the mint differs, uses the wrong token program, has the wrong decimals, lacks `TransferFeeConfig`, or exposes an active fee policy other than 200 bps.
+Execution fails when the mint differs, uses the wrong token program, has the wrong decimals, lacks the expected transfer-fee extension, or has an active fee policy other than 200 bps.
 
 ## Fee semantics
 
-A successful checkout has three independently disclosed cost layers:
+A successful purchase has two separate protocol costs:
 
-1. **PowerPay service fee — 2% / 200 bps in SOL.** It is calculated from the base purchase amount, rounded up at lamport precision, and transferred atomically with the base purchase to the configured sale treasury.
-2. **PWRC Token-2022 transfer fee — 2% / 200 bps.** The active maximum-fee cap still applies. Exact fee and net PWRC are calculated from the mint state at execution time.
-3. **Solana network fee.** It is charged separately by the runtime to the transaction fee payer and is not transferred to the PowerPay treasury.
+1. **PWRC Token-2022 transfer fee** — active policy must be 2%. The mint's current maximum-fee cap still applies.
+2. **Solana network fee** — charged by the runtime to the transaction fee payer and not sent to the PowerPay treasury.
 
-PWRC output is derived from the **base purchase lamports**, not from the service-fee-inclusive SOL total. This prevents an application fee from changing the advertised PWRC/SOL exchange rate.
+PowerPay currently adds **0% application checkout service fee**.
 
-The service-fee math lives in `programs/settlements/` and is consumed by the Anchor program. The browser uses the matching canonical constants for disclosure and quote review, but the deployed program remains authoritative at settlement.
+The program uses exact `transfer_checked_with_fee` semantics so an unexpected fee-policy change cannot silently settle under different terms.
 
 ## Network binding
 
-PowerPay accepts only `devnet` and `mainnet-beta` at the application boundary. Browser callers select a cluster identifier; server code resolves that identifier to reviewed RPC/program mappings. A request cannot inject an executable RPC URL or program id.
+PowerPay supports only `devnet` and `mainnet-beta` at the application boundary. Browser callers select a cluster identifier; server code resolves that identifier to reviewed RPC/program mappings. Callers cannot inject an executable RPC or program id.
 
-The selected RPC is a **read/transport boundary**, not settlement authority. Settlement authority remains the deployed program, SaleConfig, canonical PWRC mint, signed quote parameters, and Solana runtime.
+The same Anchor source may be deployed independently to both clusters. Each deployment must be verified separately; a configured address is not proof that a mainnet deployment exists.
 
-RPC readiness checks use an 8-second timeout, response-size limits, safe JSON parsing, explicit latency/error state, and no-store semantics.
+Before a network is enabled, the canonical PWRC mint and fee policy must be verified on that cluster. Mainnet transaction construction fails closed when its live program/quote cannot be verified.
 
 ## Atomic settlement
 
-`buy_pwrc` executes the economic legs in one Solana transaction:
+`buy_pwrc` performs the SOL and PWRC legs in one transaction:
 
 ```text
-buyer SOL
-  ├─ base purchase ──────────► configured treasury
-  ├─ 2% service fee ─────────► configured treasury
-  └─ Solana network fee ─────► runtime (separate)
-
-sale vault gross PWRC ───────► buyer Token-2022 ATA
-PurchaseReceipt PDA ─────────► immutable settlement evidence
+buyer SOL ───────────────► configured treasury
+sale vault gross PWRC ───► buyer Token-2022 ATA
+PurchaseReceipt PDA ─────► immutable purchase evidence
 ```
 
 If any required instruction fails, Solana rolls back the transaction.
 
 ## Quote binding
 
-The purchase instruction binds execution to the buyer-reviewed terms:
+The purchase instruction carries the values required to bind execution to the reviewed quote:
 
-- base SOL amount in lamports
+- SOL amount in lamports
 - expected gross PWRC-per-SOL rate
 - minimum acceptable net PWRC
-- expected PWRC Token-2022 fee basis points = 200
-- expected PowerPay service fee basis points = 200
+- expected PWRC Token-2022 fee basis points
 
-The program rejects settlement when the sale rate changes, either fee policy differs, inventory is insufficient, arithmetic overflows, or computed net PWRC falls below the signed minimum.
+The program rejects settlement if the sale rate changes, the fee policy changes, or the computed net amount is below the signed minimum.
 
-## Replay-resistant receipt
+## Replay-resistant purchase receipt
 
-Each checkout reference derives one receipt PDA:
+Every order/reference derives a receipt PDA:
 
 ```text
 PDA("purchase", reference)
 ```
 
-The account is created with `init`, so the same reference cannot settle twice. The receipt records:
+The receipt is initialized atomically with settlement and records the purchase evidence needed for status verification. Because the account is created with `init`, the same reference cannot be settled twice.
 
-- buyer and reference
-- base purchase lamports
-- service-fee bps and lamports
-- total SOL before network fee
-- gross PWRC
-- Token-2022 fee bps and exact fee
-- net PWRC
-- confirmation slot and PDA bump
+The Solana Pay status path uses this program-owned receipt as settlement evidence instead of treating the appearance of a reference key in an arbitrary transaction as sufficient proof.
 
-The Solana Pay status route verifies this program-owned receipt rather than accepting an arbitrary transaction merely because it contains a reference account.
+## Sale authority
 
-## API boundary
+The sale config controls:
 
-Public API routes use the shared `lib/api/http.ts` boundary:
+- authority
+- SOL treasury
+- PWRC mint
+- gross PWRC-per-SOL rate
+- minimum purchase
+- maximum purchase
+- enabled state
+- vault ownership boundary
 
-- 1 MiB default request-body ceiling
-- request correlation through `x-request-id`
-- generated request IDs when an incoming value is absent/invalid
-- `Cache-Control: no-store` and `Pragma: no-cache`
-- safe JSON decoding for request bodies
-- typed application errors without leaking secrets
+Authority-only operations must not be exposed through public browser routes.
 
-OpenAPI metadata is available at `/api/openapi`; Swagger authorization persistence is explicitly disabled in its published UI policy.
+## Off-chain trust boundary
 
-## WebSocket policy boundary
-
-The current Next.js application does not expose a public WebSocket server. `lib/websocket/guard.ts` defines the mandatory policy for any adapter/gateway that adds one:
-
-- 64 KiB per-message ceiling
-- maximum three failed authentication attempts
-- maximum 32 subscriptions per connection
-- maximum 120 messages per minute
-- explicit rate-limit errors
-- policy close (`1008`) and overload/rate close (`1013`) mapping
-
-A future transport must call these guards at the connection boundary; their presence alone does not secure an unrelated WebSocket implementation.
-
-## Browser/navigation boundary
-
-Public mobile navigation is a modal dialog with focus trapping, Escape-to-close, focus restoration, background scroll locking, and route-aware `aria-current`. Internal routes use Next.js client transitions rather than forced full-page reloads.
-
-Global browser headers include `X-Robots-Tag: noindex, nofollow, noarchive`, `X-Content-Type-Options: nosniff`, a restrictive referrer policy, and a Permissions Policy.
-
-## Off-chain market-data boundary
-
-Pyth and Birdeye are reference data only. They may inform USD display, freshness, divergence, and reconciliation, but cannot change the executable PWRC rate or bypass program checks.
+Pyth and Birdeye are reference data only. They may inform USD display, freshness, divergence, and reconciliation, but they cannot change the executable PWRC rate or bypass program checks.
 
 ## Upgrade safety
 
-When the program ABI changes:
+When the program binary changes:
 
-1. rebuild the Anchor program and regenerate its IDL/types
-2. deploy the matching web transaction builder and Solana Pay transaction route atomically with the program upgrade
-3. run Rust + Anchor + TypeScript/static regression checks
-4. test first on Devnet
-5. verify service-fee math, Token-2022 exact fee behavior, and replay rejection
-6. upgrade only with the intended program upgrade authority
-7. inspect program id, executable state, SaleConfig, treasury, mint, fee policy, and vault inventory before enablement
+1. rebuild and regenerate the IDL/types
+2. ensure the web transaction builder matches the new instruction/account layout
+3. run Anchor tests
+4. test on devnet/staging
+5. verify replay rejection and exact fee behavior
+6. upgrade the deployed binary only with the intended upgrade authority
+7. inspect bytecode/program id and sale config before enablement
 
-The current `buy_pwrc` ABI and `PurchaseReceipt` layout include the 2% service-fee fields. An older client/status decoder must not be mixed with this binary.
+If the deployed predecessor is Anchor 0.32.x and still has a legacy IDL account, complete [`ANCHOR_V1_MIGRATION.md`](ANCHOR_V1_MIGRATION.md) before the v1 upgrade.

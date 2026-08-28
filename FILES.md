@@ -2,17 +2,16 @@
 
 Canonical version: **1.0.0**.
 
-This index reflects the canonical source export. Generated output, dependency directories, local secrets, and the locally regenerated `pnpm-lock.yaml` are intentionally omitted from this archive index.
+This index reflects the canonical source export. Generated build output, dependency directories, local secrets and lockfiles that are not present in the export are intentionally omitted.
 
 ```text
 .env.example
-.github/dependabot.yml
-.github/workflows/security.yml
 .gitignore
 Anchor.toml
 BUILD_NOTES.md
 CHANGELOG.md
 Cargo.toml
+FILES.md
 MANIFEST.md
 README.md
 apps/web/.env.example
@@ -100,7 +99,6 @@ docs/API.md
 docs/ARCHITECTURE.md
 docs/CONFIGURATION.md
 docs/DEPENDENCY_POLICY.md
-docs/DEPENDENCY_SECURITY.md
 docs/FEES.md
 docs/NETWORKS.md
 docs/PRICE_DATA.md
@@ -111,11 +109,6 @@ docs/SECURITY.md
 docs/WALLET_CONNECT.md
 docs/reference/powerpay-checkout-light.png
 package.json
-packages/bigint-buffer/README.md
-packages/bigint-buffer/index.cjs
-packages/bigint-buffer/index.d.ts
-packages/bigint-buffer/index.js
-packages/bigint-buffer/package.json
 pnpm-workspace.yaml
 programs/pwrc-sale/Cargo.toml
 programs/pwrc-sale/README.md
@@ -125,11 +118,10 @@ programs/settlements/README.md
 programs/settlements/src/lib.rs
 scripts/check-accessibility.mjs
 scripts/check-architecture.mjs
-scripts/check-dependency-security.mjs
 scripts/check-security.mjs
 scripts/doctor.mjs
 scripts/sale-admin.mjs
 scripts/setup-env.mjs
-tests/bigint-buffer.spec.mjs
-tests/pwrc-sale.spec.mjs
+tests/pwrc-sale.spec.ts
+tsconfig.anchor.json
 ```
