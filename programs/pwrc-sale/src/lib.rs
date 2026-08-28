@@ -1,4 +1,7 @@
 use anchor_lang::prelude::*;
+use powerpay_settlements::{
+    powerpay_service_fee_lamports, total_before_network_fee_lamports, POWERPAY_SERVICE_FEE_BPS,
+};
 use anchor_spl::{
     associated_token::AssociatedToken,
     token_2022::spl_token_2022::extension::transfer_fee::TransferFeeConfig,
@@ -13,7 +16,6 @@ declare_id!("4snMyVjPbQMkZDQ6BKqrEv1HfJxVKwvpXvT2pB4QELiM");
 pub const CANONICAL_PWRC_MINT: Pubkey = pubkey!("PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc");
 pub const PWRC_DECIMALS: u8 = 9;
 pub const REQUIRED_PWRC_TRANSFER_FEE_BPS: u16 = 200; // 2.00%
-pub const BASIS_POINTS_DENOMINATOR: u16 = 10_000;
 
 #[program]
 pub mod pwrc_sale {
@@ -96,6 +98,7 @@ pub mod pwrc_sale {
         expected_pwrc_per_sol_gross: u64,
         min_net_pwrc_raw: u64,
         expected_transfer_fee_bps: u16,
+        expected_service_fee_bps: u16,
     ) -> Result<()> {
         let config = &ctx.accounts.config;
         require!(config.enabled, SaleError::SaleDisabled);
@@ -108,6 +111,10 @@ pub mod pwrc_sale {
         require!(
             expected_transfer_fee_bps == REQUIRED_PWRC_TRANSFER_FEE_BPS,
             SaleError::QuoteFeeChanged
+        );
+        require!(
+            expected_service_fee_bps == POWERPAY_SERVICE_FEE_BPS,
+            SaleError::QuoteServiceFeeChanged
         );
 
         // SOL and PWRC both use 9 decimals. Therefore raw PWRC units are
@@ -129,9 +136,14 @@ pub mod pwrc_sale {
         );
         require!(fee_quote.net_raw >= min_net_pwrc_raw, SaleError::QuoteSlippageExceeded);
 
-        // The buyer is the transaction fee payer in the client-built transaction,
-        // so Solana's network fee is charged by the runtime in addition to this SOL
-        // purchase amount. The program itself never invents or redirects that fee.
+        // PowerPay charges a canonical 2% service fee in SOL on top of the base
+        // purchase amount. The buyer remains the transaction fee payer, so the
+        // Solana network fee is still charged separately by the runtime.
+        let service_fee_lamports = powerpay_service_fee_lamports(lamports)
+            .map_err(|_| error!(SaleError::MathOverflow))?;
+        let total_lamports = total_before_network_fee_lamports(lamports)
+            .map_err(|_| error!(SaleError::MathOverflow))?;
+
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 anchor_lang::system_program::ID,
@@ -140,7 +152,7 @@ pub mod pwrc_sale {
                     to: ctx.accounts.treasury.to_account_info(),
                 },
             ),
-            lamports,
+            total_lamports,
         )?;
 
         let bump = [config.bump];
@@ -168,6 +180,9 @@ pub mod pwrc_sale {
         receipt.buyer = ctx.accounts.buyer.key();
         receipt.reference = ctx.accounts.reference.key();
         receipt.lamports = lamports;
+        receipt.service_fee_bps = POWERPAY_SERVICE_FEE_BPS;
+        receipt.service_fee_lamports = service_fee_lamports;
+        receipt.total_lamports = total_lamports;
         receipt.gross_pwrc_raw = gross_raw;
         receipt.transfer_fee_bps = fee_quote.basis_points;
         receipt.transfer_fee_raw = fee_quote.fee_raw;
@@ -179,6 +194,9 @@ pub mod pwrc_sale {
             buyer: ctx.accounts.buyer.key(),
             reference: ctx.accounts.reference.key(),
             lamports,
+            service_fee_bps: POWERPAY_SERVICE_FEE_BPS,
+            service_fee_lamports,
+            total_lamports,
             gross_pwrc_raw: gross_raw,
             transfer_fee_bps: fee_quote.basis_points,
             transfer_fee_raw: fee_quote.fee_raw,
@@ -377,7 +395,11 @@ impl SaleConfig {
 pub struct PurchaseReceipt {
     pub buyer: Pubkey,
     pub reference: Pubkey,
+    /// Base SOL purchase amount used to calculate PWRC output.
     pub lamports: u64,
+    pub service_fee_bps: u16,
+    pub service_fee_lamports: u64,
+    pub total_lamports: u64,
     pub gross_pwrc_raw: u64,
     pub transfer_fee_bps: u16,
     pub transfer_fee_raw: u64,
@@ -387,7 +409,7 @@ pub struct PurchaseReceipt {
 }
 
 impl PurchaseReceipt {
-    pub const LEN: usize = 32 + 32 + 8 + 8 + 2 + 8 + 8 + 8 + 1;
+    pub const LEN: usize = 32 + 32 + 8 + 2 + 8 + 8 + 8 + 2 + 8 + 8 + 8 + 1;
 }
 
 #[derive(Clone, Copy)]
@@ -451,6 +473,9 @@ pub struct Purchase {
     pub buyer: Pubkey,
     pub reference: Pubkey,
     pub lamports: u64,
+    pub service_fee_bps: u16,
+    pub service_fee_lamports: u64,
+    pub total_lamports: u64,
     pub gross_pwrc_raw: u64,
     pub transfer_fee_bps: u16,
     pub transfer_fee_raw: u64,
@@ -513,6 +538,8 @@ pub enum SaleError {
     QuoteRateChanged,
     #[msg("The PWRC transfer-fee policy changed after quote review. Refresh the quote.")]
     QuoteFeeChanged,
+    #[msg("The PowerPay service-fee policy changed after quote review. Refresh the quote.")]
+    QuoteServiceFeeChanged,
     #[msg("The net PWRC output is below the signed minimum. Refresh the quote.")]
     QuoteSlippageExceeded,
 }

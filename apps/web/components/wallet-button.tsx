@@ -3,11 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Copy, LogOut, RefreshCw, Wallet } from "lucide-react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { compactAddress } from "@/lib/format";
+import { compactAddress, formatNumber } from "@/lib/format";
+import { useWalletBalances } from "@/context/wallet-balance-context";
 import { useWalletConnectModal } from "./wallet-connect-modal";
 
 export function WalletButton() {
   const { publicKey, connected, disconnect, wallet } = useWallet();
+  const balances = useWalletBalances();
   const { setVisible } = useWalletConnectModal();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -66,6 +68,20 @@ export function WalletButton() {
           <div className="wallet-popover-head">
             <span>Connected with {wallet?.adapter.name ?? "wallet"}</span>
             <strong>{compactAddress(publicKey.toBase58(), 5, 5)}</strong>
+          </div>
+          <div className="wallet-popover-balances" aria-label="Wallet balances">
+            <div><span>SOL</span><strong>{balances.sol == null ? "—" : formatNumber(balances.sol, 4)}</strong></div>
+            <div><span>PWRC</span><strong>{balances.pwrc == null ? "—" : formatNumber(balances.pwrc, 0)}</strong></div>
+            <button
+              type="button"
+              className="wallet-balance-refresh"
+              onClick={() => void balances.refresh()}
+              disabled={balances.loading}
+              aria-label="Refresh wallet balances"
+              title={balances.error || "Refresh balances"}
+            >
+              <RefreshCw size={14} className={balances.loading ? "spin" : undefined} />
+            </button>
           </div>
           <button role="menuitem" onClick={() => void copyAddress()}>
             {copied ? <Check size={16} /> : <Copy size={16} />}

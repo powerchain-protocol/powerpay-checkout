@@ -1,14 +1,11 @@
-import { SiteHeader } from "@/components/site-header";
+import { AppShell } from "@/components/app-shell";
 import { CheckoutApp } from "@/components/checkout-app";
-import { Footer } from "@/components/footer";
 import { MarketPriceProvider } from "@/context/market-price-context";
 
 export default function CheckoutPage() {
   return (
-    <main className="shell">
-      <SiteHeader />
+    <AppShell>
       <MarketPriceProvider><CheckoutApp /></MarketPriceProvider>
-      <Footer />
-    </main>
+    </AppShell>
   );
 }

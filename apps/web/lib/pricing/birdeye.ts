@@ -1,7 +1,7 @@
 import { BIRDEYE_SOL_ADDRESS, MARKET_REQUEST_TIMEOUT_MS } from "@/constants/market";
 import { serverEnv } from "@/env/server";
 import { AppError } from "@/lib/errors";
-import { fetchWithTimeout, safeNumber } from "@/utils/util";
+import { fetchWithTimeout, readJsonResponse, safeNumber } from "@/utils/util";
 import type { PriceObservation } from "./types";
 
 export async function fetchBirdeyeSolUsd(): Promise<PriceObservation> {
@@ -27,7 +27,7 @@ export async function fetchBirdeyeSolUsd(): Promise<PriceObservation> {
     throw new AppError(`Birdeye returned ${response.status}`, "UPSTREAM_UNAVAILABLE", 503);
   }
 
-  const payload = await response.json() as {
+  const payload = await readJsonResponse<{
     success?: boolean;
     data?: {
       value?: number;
@@ -36,7 +36,8 @@ export async function fetchBirdeyeSolUsd(): Promise<PriceObservation> {
       updatedAt?: number;
       liquidity?: number;
     } | null;
-  };
+  }>(response);
+  if (payload.success === false) throw new AppError("Birdeye returned an unsuccessful response", "UPSTREAM_UNAVAILABLE", 503);
   const priceUsd = safeNumber(payload.data?.value ?? payload.data?.price);
   if (!(priceUsd > 0)) throw new AppError("Birdeye SOL/USD price is unavailable", "UPSTREAM_UNAVAILABLE", 503);
 

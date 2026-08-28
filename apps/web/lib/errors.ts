@@ -6,6 +6,9 @@ export type ErrorCode =
   | "UPSTREAM_UNAVAILABLE"
   | "ONCHAIN_UNAVAILABLE"
   | "TRANSACTION_FAILED"
+  | "PAYLOAD_TOO_LARGE"
+  | "RATE_LIMITED"
+  | "UNAUTHORIZED"
   | "UNKNOWN_ERROR";
 
 export class AppError extends Error {
@@ -26,10 +29,14 @@ export function asAppError(error: unknown, fallbackMessage = "Unexpected error")
   return new AppError(fallbackMessage, "UNKNOWN_ERROR", 500, error);
 }
 
-export function errorResponse(error: unknown, fallbackMessage?: string) {
+export function errorResponse(error: unknown, fallbackMessage?: string, requestId?: string, extraHeaders?: HeadersInit) {
   const appError = asAppError(error, fallbackMessage);
+  const headers = new Headers(extraHeaders);
+  headers.set("Cache-Control", "no-store, max-age=0");
+  headers.set("Pragma", "no-cache");
+  if (requestId) headers.set("x-request-id", requestId);
   return NextResponse.json(
-    { error: appError.message, code: appError.code },
-    { status: appError.status },
+    { error: appError.message, code: appError.code, requestId: requestId || undefined },
+    { status: appError.status, headers },
   );
 }

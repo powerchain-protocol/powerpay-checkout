@@ -28,6 +28,8 @@ import { PwrcCoin } from "./pwrc-coin";
 import { MobileCheckoutBar } from "./mobile";
 import { useWalletConnectModal } from "./wallet-connect-modal";
 import { useMarketPrice } from "@/context/market-price-context";
+import { useSolanaNetwork } from "@/context/solana-network-context";
+import { useWalletBalances } from "@/context/wallet-balance-context";
 import {
   CANONICAL_PWRC_MINT,
   DEFAULT_BUY_SOL,
@@ -36,6 +38,8 @@ import {
   QUICK_BUY_SOL_AMOUNTS,
 } from "@/constants/app";
 import { explorerTx } from "@/lib/solana/explorer";
+import { POWERPAY_SERVICE_FEE_PERCENT, SOL_NETWORK_FEE_BUFFER_SOL } from "@/constants/price-rates";
+import { fetchData } from "@/data/fetch-data";
 import { compactAddress, formatNumber, parsePositiveNumber } from "@/lib/format";
 import { formatAge } from "@/utils/util";
 import { StatusPill } from "@/utils/helpers";
@@ -62,6 +66,15 @@ type Quote = {
   transferFeeBasisPoints: number | null;
   transferFeeMaximumPwrc?: number | null;
   powerPayServiceFeeBasisPoints?: number;
+  purchaseSol?: number;
+  purchaseLamports?: string;
+  serviceFeeSol?: number;
+  serviceFeeLamports?: string;
+  totalBeforeNetworkFeeSol?: number;
+  totalBeforeNetworkFeeLamports?: string;
+  grossPwrcRaw?: string;
+  transferFeePwrcRaw?: string;
+  netPwrcRaw?: string;
   solanaNetworkFee?: "wallet-estimated";
   minSol: number;
   maxSol: number;
@@ -108,16 +121,30 @@ export function CheckoutApp() {
   const { publicKey, sendTransaction } = useWallet();
   const { setVisible } = useWalletConnectModal();
   const { solUsd, loading: marketLoading, error: marketError } = useMarketPrice();
+  const { cluster, label: networkLabel, production, programId } = useSolanaNetwork();
+  const walletBalances = useWalletBalances();
 
   const sol = parsePositiveNumber(amount);
   const countdown = useCountdown(expiresAt);
   const expired = Boolean(expiresAt && Date.now() >= expiresAt);
   const solUsdPrice = solUsd?.priceUsd ?? 0;
-  const usdTotal = solUsdPrice > 0 ? sol * solUsdPrice : 0;
+  const purchaseUsd = solUsdPrice > 0 ? sol * solUsdPrice : 0;
+  const serviceFeeSol = quote?.serviceFeeSol ?? (sol * POWERPAY_SERVICE_FEE_BPS / 10_000);
+  const totalBeforeNetworkFeeSol = quote?.totalBeforeNetworkFeeSol ?? (sol + serviceFeeSol);
+  const usdTotal = solUsdPrice > 0 ? totalBeforeNetworkFeeSol * solUsdPrice : 0;
   const marketSource = marketSourceLabel(solUsd?.source);
 
+  useEffect(() => {
+    setSignature("");
+    setQrUrl("");
+    setExpiresAt(null);
+    setPaymentReference("");
+    setPaymentLamports("");
+    setError("");
+  }, [cluster]);
+
   const refresh = useCallback(async () => {
-    if (!sol) {
+    if (!programId || !sol) {
       setQuote(null);
       setQrUrl("");
       setExpiresAt(null);
@@ -129,25 +156,21 @@ export function CheckoutApp() {
     setRefreshing(true);
     setError("");
     try {
-      const [quoteResponse, payResponse] = await Promise.all([
-        fetch(`/api/quote?sol=${encodeURIComponent(amount)}`, { cache: "no-store" }),
-        fetch(`/api/solana-pay/url?sol=${encodeURIComponent(amount)}`, { cache: "no-store" }),
+      const [quoteResult, payResult] = await Promise.allSettled([
+        fetchData<Quote>(`/api/quote?sol=${encodeURIComponent(amount)}&cluster=${encodeURIComponent(cluster)}`),
+        fetchData<{ url?: string; expiresAt?: number; reference?: string; lamports?: string }>(
+          `/api/solana-pay/url?sol=${encodeURIComponent(amount)}&cluster=${encodeURIComponent(cluster)}`,
+        ),
       ]);
-      const q = await quoteResponse.json();
-      const pay = await payResponse.json();
 
-      if (!quoteResponse.ok || q.error) {
-        setQuote(null);
-        setError(q.error || "Quote unavailable");
-      } else {
-        setQuote(q);
-      }
+      if (quoteResult.status === "rejected") throw quoteResult.reason;
+      setQuote(quoteResult.value);
 
-      if (payResponse.ok && pay.url) {
-        setQrUrl(pay.url);
-        setExpiresAt(pay.expiresAt);
-        setPaymentReference(pay.reference ?? "");
-        setPaymentLamports(pay.lamports ?? "");
+      if (payResult.status === "fulfilled" && payResult.value.url) {
+        setQrUrl(payResult.value.url);
+        setExpiresAt(payResult.value.expiresAt ?? null);
+        setPaymentReference(payResult.value.reference ?? "");
+        setPaymentLamports(payResult.value.lamports ?? "");
       } else {
         setQrUrl("");
         setExpiresAt(null);
@@ -159,7 +182,7 @@ export function CheckoutApp() {
     } finally {
       setRefreshing(false);
     }
-  }, [amount, sol]);
+  }, [amount, cluster, programId, sol]);
 
   useEffect(() => {
     const id = window.setTimeout(() => void refresh(), 240);
@@ -167,15 +190,25 @@ export function CheckoutApp() {
   }, [refresh]);
 
   const amountIssue = useMemo(() => {
+    if (!programId) return `PowerPay sale program is not configured for ${networkLabel}.`;
     if (!sol) return "Enter a SOL amount to continue.";
     if (!quote || quote.source !== "onchain") return "Waiting for the live on-chain sale configuration.";
     if (!quote.enabled) return "The PWRC sale is not currently enabled.";
     if (sol < quote.minSol) return `Minimum purchase is ${formatNumber(quote.minSol, 4)} SOL.`;
     if (sol > quote.maxSol) return `Maximum purchase is ${formatNumber(quote.maxSol, 4)} SOL.`;
     return "";
-  }, [quote, sol]);
+  }, [networkLabel, programId, quote, sol]);
 
-  const canBuy = Boolean(publicKey && !amountIssue && quote?.source === "onchain" && quote.enabled);
+  const insufficientWalletSol = Boolean(
+    publicKey && walletBalances.sol != null && sol > 0 && walletBalances.sol <= totalBeforeNetworkFeeSol + SOL_NETWORK_FEE_BUFFER_SOL,
+  );
+  const canBuy = Boolean(
+    publicKey
+    && !amountIssue
+    && !insufficientWalletSol
+    && quote?.source === "onchain"
+    && quote.enabled,
+  );
   const qrReady = Boolean(qrUrl && !expired && !amountIssue);
 
   useEffect(() => {
@@ -184,11 +217,10 @@ export function CheckoutApp() {
 
     const poll = async () => {
       try {
-        const response = await fetch(
-          `/api/solana-pay/status?reference=${encodeURIComponent(paymentReference)}&lamports=${encodeURIComponent(paymentLamports)}`,
-          { cache: "no-store" },
+        const data = await fetchData<{ confirmed?: boolean; signature?: string }>(
+          `/api/solana-pay/status?reference=${encodeURIComponent(paymentReference)}&lamports=${encodeURIComponent(paymentLamports)}&cluster=${encodeURIComponent(cluster)}`,
+          { timeoutMs: 8_000 },
         );
-        const data = await response.json();
         if (!stopped && data.confirmed && data.signature) setSignature(data.signature);
       } catch {
         // QR polling is best-effort. On-chain verification remains authoritative.
@@ -201,10 +233,11 @@ export function CheckoutApp() {
       stopped = true;
       window.clearInterval(id);
     };
-  }, [paymentReference, paymentLamports, signature]);
+  }, [cluster, paymentReference, paymentLamports, signature]);
 
   const paymentReady = paymentMethod === "wallet" ? canBuy : paymentMethod === "solana-pay" ? qrReady : false;
   const currentStep = signature ? 2 : paymentReady ? 1 : 0;
+  const progressPercent = signature ? 100 : paymentReady ? 66 : 33;
 
   async function buyWithWallet() {
     if (!publicKey) {
@@ -217,18 +250,17 @@ export function CheckoutApp() {
     setError("");
     setSignature("");
     try {
-      const res = await fetch("/api/transactions/buy", {
+      const data = await fetchData<{ transaction: string }>("/api/transactions/buy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account: publicKey.toBase58(), sol: amount }),
+        body: JSON.stringify({ account: publicKey.toBase58(), sol: amount, cluster }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Unable to build purchase");
 
       const tx = Transaction.from(Buffer.from(data.transaction, "base64"));
       const sig = await sendTransaction(tx, connection, { skipPreflight: false });
       await connection.confirmTransaction(sig, "confirmed");
       setSignature(sig);
+      await walletBalances.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Purchase failed");
     } finally {
@@ -246,7 +278,7 @@ export function CheckoutApp() {
     setAmount(nextAmount);
   }
 
-  const paymentFee = `${PWRC_TRANSFER_FEE_PERCENT}% PWRC Token-2022 transfer fee`;
+  const paymentFee = `${POWERPAY_SERVICE_FEE_PERCENT}% service fee + ${PWRC_TRANSFER_FEE_PERCENT}% PWRC token fee`;
   const marketHealthy = Boolean(solUsd && !solUsd.stale && solUsd.source !== "fallback");
   const marketAge = solUsd ? formatAge(Math.max(0, (Date.now() - new Date(solUsd.updatedAt).getTime()) / 1000)) : "loading";
   const saleLive = Boolean(quote?.source === "onchain" && quote.enabled);
@@ -257,7 +289,7 @@ export function CheckoutApp() {
         <div>
           <span className={`context-dot ${saleLive ? "live" : "preview"}`} />
           <strong>{saleLive ? "PWRC sale live" : "PWRC preview mode"}</strong>
-          <span>Token-2022 · Solana</span>
+          <span>Token-2022 · Solana {networkLabel}</span>
         </div>
         <div className="checkout-context-right">
           <span>Market reference</span>
@@ -265,6 +297,14 @@ export function CheckoutApp() {
           <StatusPill ok={marketHealthy}>{marketHealthy ? `${marketSource} fresh` : "Reference only"}</StatusPill>
         </div>
       </section>
+
+      <div className={`network-mode-banner ${production ? "mainnet" : "devnet"}`} role="status">
+        <span className="network-dot" />
+        <div>
+          <strong>{!programId ? `${networkLabel} · Program not configured` : production ? "Mainnet Beta · Live funds" : "Devnet · Test mode"}</strong>
+          <span>{!programId ? "Configure the cluster-specific PowerPay program id before Buy PWRC can execute." : production ? "Purchases use real SOL and PWRC. Review every wallet prompt before signing." : "Use this mode to validate checkout and Solana Pay flows without production settlement."}</span>
+        </div>
+      </div>
 
       <div className="checkout-grid">
         <section className="panel main-panel" id="buy">
@@ -318,7 +358,7 @@ export function CheckoutApp() {
                     aria-describedby="sol-amount-reference"
                   />
                   <div className="subtext amount-reference" id="sol-amount-reference">
-                    {marketLoading ? "Loading SOL/USD…" : usdTotal > 0 ? `≈ $${formatNumber(usdTotal, 2)} USD` : "USD reference unavailable"}
+                    {marketLoading ? "Loading SOL/USD…" : purchaseUsd > 0 ? `≈ $${formatNumber(purchaseUsd, 2)} USD` : "USD reference unavailable"}
                   </div>
                 </div>
               </div>
@@ -442,10 +482,14 @@ export function CheckoutApp() {
             ) : (
               <>
                 <span className="method-icon"><Wallet size={20} /></span>
-                <div><strong>{publicKey ? "Wallet connected" : "Connect a Solana wallet"}</strong><span>{publicKey ? `${compactAddress(publicKey.toBase58(), 5, 5)} will sign the purchase transaction.` : "Phantom, Solflare, Backpack, and other Wallet Standard wallets are supported."}</span></div>
+                <div><strong>{publicKey ? "Wallet connected" : "Connect a Solana wallet"}</strong><span>{publicKey ? `${compactAddress(publicKey.toBase58(), 5, 5)} · ${walletBalances.sol == null ? "reading balance…" : `${formatNumber(walletBalances.sol, 4)} SOL available`}` : "Phantom, Solflare, Backpack, and other Wallet Standard wallets are supported."}</span></div>
               </>
             )}
           </div>
+
+          {paymentMethod === "wallet" && insufficientWalletSol ? (
+            <div className="inline-warning" role="alert"><Info size={15} />Insufficient SOL for the purchase amount + PowerPay service fee. The wallet must also retain enough SOL for the Solana network fee and any account rent.</div>
+          ) : null}
 
           <div className="actions">
             <button className="secondary-button" onClick={() => setVisible(true)}>
@@ -470,8 +514,8 @@ export function CheckoutApp() {
           {signature && (
             <div className="tx-success" role="status">
               <span className="success-icon"><Check size={17} /></span>
-              <div><strong>Purchase confirmed</strong><span>Your PWRC settlement is confirmed on Solana.</span></div>
-              <a href={explorerTx(signature)} target="_blank" rel="noreferrer">View transaction <ExternalLink size={13} /></a>
+              <div><strong>Purchase confirmed</strong><span>Your PWRC settlement is confirmed on Solana {networkLabel}.</span></div>
+              <a href={explorerTx(signature, cluster)} target="_blank" rel="noreferrer">View transaction <ExternalLink size={13} /></a>
             </div>
           )}
           <div className="security-note"><ShieldCheck size={16} /> Buyer signs the transaction. PowerPay never receives or stores wallet private keys.</div>
@@ -487,9 +531,23 @@ export function CheckoutApp() {
             <div className="solana-icon-box"><NetworkIcon network="solana" size={30} variant="branded" /></div>
           </div>
 
+          <div className="side-progress-card" aria-label={`Checkout progress: step ${currentStep + 1} of 3`}>
+            <div className="side-progress-copy">
+              <span>Checkout progress</span>
+              <strong>{signature ? "Complete" : currentStep === 1 ? "Ready to pay" : "Review purchase"}</strong>
+            </div>
+            <span className="side-progress-count">{currentStep + 1}/3</span>
+            <div className="side-progress-track" aria-hidden="true"><span style={{ width: `${progressPercent}%` }} /></div>
+            <div className="side-progress-meta" aria-hidden="true">
+              {["Review", "Pay", "Done"].map((label, index) => (
+                <span key={label} className={index <= currentStep ? "active" : ""}>{label}</span>
+              ))}
+            </div>
+          </div>
+
           <div className={`qr-shell ${qrReady ? "ready" : "inactive"}`}>
             {qrReady ? (
-              <QRCodeSVG value={qrUrl} level="H" includeMargin={false} size={296} aria-label="Solana Pay purchase QR code" />
+              <QRCodeSVG value={qrUrl} level="H" includeMargin={false} size={272} aria-label="Solana Pay purchase QR code" />
             ) : (
               <div className="qr-empty">
                 <ScanLine size={30} />
@@ -506,17 +564,28 @@ export function CheckoutApp() {
             <button className="secondary-button compact" disabled={!qrReady} onClick={openSolanaPay}>Open</button>
           </div>
 
+          <div className="checkout-marketing-card">
+            <span className="marketing-icon"><Leaf size={19} /></span>
+            <div className="marketing-copy">
+              <span>PowerChain utility</span>
+              <strong>PWRC connects digital payments with renewable infrastructure.</strong>
+              <div><span>Solar</span><span>Storage</span><span>Local Energy</span></div>
+            </div>
+          </div>
+
           <div className="detail-list purchase-details">
-            <div className="detail-row"><span>Amount</span><strong className="green">{formatNumber(sol || 0, 4)} SOL</strong></div>
+            <div className="detail-row"><span>Purchase amount</span><strong className="green">{formatNumber(sol || 0, 4)} SOL</strong></div>
+            <div className="detail-row"><span>Service fee ({POWERPAY_SERVICE_FEE_PERCENT}%)</span><strong>{formatNumber(serviceFeeSol, 4)} SOL</strong></div>
+            <div className="detail-row emphasis"><span>Before network fee</span><strong>{formatNumber(totalBeforeNetworkFeeSol, 4)} SOL</strong></div>
             <div className="detail-row"><span>USD reference</span><strong>{usdTotal > 0 ? `$${formatNumber(usdTotal, 2)}` : "—"}</strong></div>
-            <div className="detail-row"><span>Network</span><strong className="inline-asset"><NetworkIcon network="solana" size={18} variant="branded" /> Solana</strong></div>
+            <div className="detail-row"><span>Network</span><strong className="inline-asset"><NetworkIcon network="solana" size={18} variant="branded" /> {networkLabel}</strong></div>
             <div className="detail-row"><span>Delivery</span><strong>PWRC Token-2022</strong></div>
             <div className="detail-row"><span>PWRC mint</span><strong title={CANONICAL_PWRC_MINT}>{compactAddress(CANONICAL_PWRC_MINT, 6, 6)}</strong></div>
             {paymentReference && <div className="detail-row"><span>Reference</span><strong>{compactAddress(paymentReference, 4, 4)}</strong></div>}
           </div>
 
           <div className="instructions">
-            {["Open your Solana wallet", "Scan or open the payment request", "Review the exact SOL amount", "Approve and receive PWRC atomically"].map((text, i) => (
+            {["Open your Solana wallet", "Scan or open the payment request", "Review purchase + service fee", "Approve and receive PWRC atomically"].map((text, i) => (
               <div className="instruction" key={text}><span className="number">{i + 1}</span>{text}</div>
             ))}
           </div>
@@ -529,17 +598,20 @@ export function CheckoutApp() {
           <div className="summary" id="summary">
             <div className="summary-heading"><h3>Order Summary</h3><span>{quote?.source === "onchain" ? "On-chain quote" : "Preview"}</span></div>
             <div className="detail-list">
-              <div className="detail-row"><span>You pay</span><strong>{formatNumber(sol || 0, 4)} SOL</strong></div>
-              <div className="detail-row"><span>Gross PWRC</span><strong>{formatNumber(quote?.grossPwrc ?? 0, 3)}</strong></div>
-              <div className="detail-row"><span>PWRC fee (2%)</span><strong>{formatNumber(quote?.transferFeePwrc ?? 0, 3)} PWRC</strong></div>
+              <div className="detail-row"><span>Purchase</span><strong>{formatNumber(sol || 0, 4)} SOL</strong></div>
+              <div className="detail-row"><span>PowerPay service fee ({POWERPAY_SERVICE_FEE_PERCENT}%)</span><strong>{formatNumber(serviceFeeSol, 4)} SOL</strong></div>
+              <div className="detail-row"><span>Solana network fee</span><strong>Estimated by wallet</strong></div>
+              <div className="fee-divider" aria-hidden="true" />
+              <div className="detail-row"><span>Gross PWRC</span><strong>{formatNumber(quote?.grossPwrc ?? 0, 3)} PWRC</strong></div>
+              <div className="detail-row"><span>PWRC Token-2022 fee ({PWRC_TRANSFER_FEE_PERCENT}%)</span><strong>−{formatNumber(quote?.transferFeePwrc ?? 0, 3)} PWRC</strong></div>
               <div className="detail-row emphasis"><span>Wallet receives</span><strong>{formatNumber(quote?.netPwrc ?? 0, 3)} PWRC</strong></div>
-              <div className="detail-row"><span>Network fee</span><strong>Estimated by wallet</strong></div>
+              {publicKey ? <div className="detail-row"><span>Wallet SOL</span><strong>{walletBalances.sol == null ? "Reading…" : `${formatNumber(walletBalances.sol, 4)} SOL`}</strong></div> : null}
             </div>
             <div className="total-row">
-              <div><strong>Total</strong><span>{usdTotal > 0 ? `≈ $${formatNumber(usdTotal, 2)} USD` : "USD reference unavailable"}</span></div>
-              <strong>{formatNumber(sol || 0, 4)} SOL</strong>
+              <div><strong>Total before network fee</strong><span>{usdTotal > 0 ? `≈ $${formatNumber(usdTotal, 2)} USD` : "USD reference unavailable"}</span></div>
+              <strong>{formatNumber(totalBeforeNetworkFeeSol, 4)} SOL</strong>
             </div>
-            <div className="summary-protection"><ShieldCheck size={16} /><span>PowerPay service fee: {POWERPAY_SERVICE_FEE_BPS / 100}%. PWRC enforces a 2% Token-2022 transfer fee; the Solana network fee is separate and paid by the transaction fee payer.</span></div>
+            <div className="summary-protection"><ShieldCheck size={16} /><span>Fee transparency: {POWERPAY_SERVICE_FEE_PERCENT}% service fee is charged in SOL on top of the purchase. PWRC independently applies its {PWRC_TRANSFER_FEE_PERCENT}% Token-2022 transfer fee. Solana network fees are separate.</span></div>
           </div>
         </aside>
       </div>
@@ -568,12 +640,14 @@ export function CheckoutApp() {
 
       <MobileCheckoutBar
         method={paymentMethod === "wallet" ? "wallet" : "solana-pay"}
-        sol={sol}
+        sol={totalBeforeNetworkFeeSol}
         pwrc={quote?.netPwrc ?? 0}
         usd={usdTotal}
         connected={Boolean(publicKey)}
         disabled={!canBuy}
         busy={busy}
+        networkLabel={networkLabel}
+        production={production}
         solanaPayUrl={qrUrl}
         expired={expired}
         onWalletBuy={() => void buyWithWallet()}

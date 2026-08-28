@@ -1,5 +1,9 @@
-export function explorerTx(signature: string) {
-  const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet";
-  const suffix = cluster === "mainnet-beta" ? "" : `?cluster=${cluster}`;
-  return `https://solscan.io/tx/${signature}${suffix}`;
+import { SOLANA_NETWORKS, type SolanaCluster } from "@/constants/network";
+
+export function explorerTx(signature: string, cluster: SolanaCluster) {
+  return `https://solscan.io/tx/${signature}${SOLANA_NETWORKS[cluster].explorerQuery}`;
+}
+
+export function explorerAddress(address: string, cluster: SolanaCluster) {
+  return `https://solscan.io/account/${address}${SOLANA_NETWORKS[cluster].explorerQuery}`;
 }

@@ -33,3 +33,20 @@ export async function fetchWithTimeout(input: RequestInfo | URL, init: RequestIn
     clearTimeout(timeout);
   }
 }
+
+
+export async function readJsonResponse<T>(response: Response, maxBytes = 1 * 1024 * 1024): Promise<T> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new Error("JSON response exceeds the safe size limit");
+  }
+  const text = await response.text();
+  if (new TextEncoder().encode(text).byteLength > maxBytes) {
+    throw new Error("JSON response exceeds the safe size limit");
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch (cause) {
+    throw new Error("Malformed JSON response", { cause });
+  }
+}

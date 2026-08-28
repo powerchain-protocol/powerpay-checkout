@@ -16,9 +16,13 @@ pwrc_sale = "4snMyVjPbQMkZDQ6BKqrEv1HfJxVKwvpXvT2pB4QELiM"
 [programs.devnet]
 pwrc_sale = "4snMyVjPbQMkZDQ6BKqrEv1HfJxVKwvpXvT2pB4QELiM"
 
+# Anchor names the production cluster "mainnet"; web3.js / Wallet Standard use "mainnet-beta".
+[programs.mainnet]
+pwrc_sale = "4snMyVjPbQMkZDQ6BKqrEv1HfJxVKwvpXvT2pB4QELiM"
+
 [provider]
 cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "pnpm exec ts-mocha -p ./tsconfig.anchor.json -t 1000000 tests/**/*.ts"
+test = "pnpm run test:unit"

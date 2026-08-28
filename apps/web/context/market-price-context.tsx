@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { DEFAULT_MARKET_REFRESH_MS } from "@/constants/app";
 import type { SolUsdMarketData } from "@/lib/pricing/types";
+import { fetchData } from "@/data/fetch-data";
 
 type MarketPriceContextValue = {
   solUsd: SolUsdMarketData | null;
@@ -20,9 +21,7 @@ export function MarketPriceProvider({ children }: { children: React.ReactNode })
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch("/api/market/sol-usd", { cache: "no-store" });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Market data unavailable");
+      const data = await fetchData<SolUsdMarketData>("/api/market/sol-usd");
       setSolUsd(data);
       setError(null);
     } catch (err) {

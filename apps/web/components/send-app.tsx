@@ -14,6 +14,8 @@ import { TokenIcon } from "@web3icons/react/dynamic";
 import { ArrowUpRight, Check, Clipboard, Info, ShieldCheck, Wallet } from "lucide-react";
 import { PwrcCoin } from "./pwrc-coin";
 import { useWalletConnectModal } from "./wallet-connect-modal";
+import { useSolanaNetwork } from "@/context/solana-network-context";
+import { useWalletBalances } from "@/context/wallet-balance-context";
 import { explorerTx } from "@/lib/solana/explorer";
 import { compactAddress, decimalToRaw, formatNumber } from "@/lib/format";
 import { CANONICAL_PWRC_MINT, PWRC_DECIMALS, PWRC_TRANSFER_FEE_PERCENT } from "@/constants/app";
@@ -23,6 +25,8 @@ export function SendApp() {
   const { connection } = useConnection();
   const { publicKey, sendTransaction } = useWallet();
   const { setVisible } = useWalletConnectModal();
+  const { cluster, label: networkLabel, production } = useSolanaNetwork();
+  const walletBalances = useWalletBalances();
   const [asset, setAsset] = useState<"SOL" | "PWRC">("SOL");
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
@@ -31,6 +35,12 @@ export function SendApp() {
   const [sig, setSig] = useState("");
   const [feeQuote, setFeeQuote] = useState<PwrcTransferFeeQuote | null>(null);
   const [feeLoading, setFeeLoading] = useState(false);
+
+  useEffect(() => {
+    setSig("");
+    setError("");
+    setFeeQuote(null);
+  }, [cluster]);
 
   useEffect(() => {
     if (asset !== "PWRC" || !amount || Number(amount) <= 0) {
@@ -66,7 +76,26 @@ export function SendApp() {
     }
   }, [recipient]);
 
-  const ready = Boolean(publicKey && recipientValid && Number(amount) > 0 && (asset === "SOL" || feeQuote));
+  const requestedAmount = Number(amount);
+  const availableBalance = asset === "SOL" ? walletBalances.sol : walletBalances.pwrc;
+  const balanceIssue = useMemo(() => {
+    if (!publicKey || !Number.isFinite(requestedAmount) || requestedAmount <= 0 || availableBalance == null) return "";
+    if (asset === "SOL" && requestedAmount >= availableBalance) {
+      return "Insufficient SOL. Leave additional SOL for the network fee.";
+    }
+    if (asset === "PWRC" && requestedAmount > availableBalance) {
+      return "Insufficient PWRC balance for this transfer.";
+    }
+    return "";
+  }, [asset, availableBalance, publicKey, requestedAmount]);
+
+  const ready = Boolean(
+    publicKey
+    && recipientValid
+    && requestedAmount > 0
+    && !balanceIssue
+    && (asset === "SOL" || feeQuote),
+  );
 
   async function pasteRecipient() {
     try {
@@ -75,6 +104,13 @@ export function SendApp() {
     } catch {
       setError("Clipboard access was not available. Paste the address manually.");
     }
+  }
+
+  function useMaximumBalance() {
+    if (availableBalance == null || availableBalance <= 0) return;
+    const max = asset === "SOL" ? Math.max(0, availableBalance - 0.002) : availableBalance;
+    const decimals = asset === "SOL" ? 6 : 9;
+    setAmount(max.toFixed(decimals).replace(/\.?0+$/, ""));
   }
 
   async function submit() {
@@ -116,6 +152,7 @@ export function SendApp() {
       const signature = await sendTransaction(tx, connection);
       await connection.confirmTransaction(signature, "confirmed");
       setSig(signature);
+      await walletBalances.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Transaction failed");
     } finally {
@@ -126,6 +163,7 @@ export function SendApp() {
   return (
     <div className="page-grid">
       <section className="panel form-panel transaction-panel">
+        <div className={`transaction-network-state ${production ? "mainnet" : "devnet"}`}><span className="network-dot" /><strong>{networkLabel}</strong><span>{production ? "Real assets" : "Test network"}</span></div>
         <span className="section-kicker">Wallet transfer</span>
         <h1 className="page-title">Send assets</h1>
         <p className="eyebrow">Send SOL or PWRC from your connected Solana wallet. You review and sign every transaction.</p>
@@ -155,13 +193,22 @@ export function SendApp() {
             {recipient && !recipientValid && <span className="field-error">Enter a valid Solana address.</span>}
           </label>
 
-          <label className="input-wrap">
-            <span className="field-label">Amount</span>
+          <div className="input-wrap">
+            <div className="field-label-row">
+              <span className="field-label">Amount</span>
+              {publicKey ? (
+                <button type="button" className="field-inline-action" onClick={useMaximumBalance} disabled={availableBalance == null || availableBalance <= 0}>
+                  Balance {availableBalance == null ? "—" : formatNumber(availableBalance, asset === "SOL" ? 4 : 0)} · Max
+                </button>
+              ) : null}
+            </div>
             <div className="amount-entry-row">
               <span className="amount-entry-asset">{asset === "SOL" ? <TokenIcon symbol="SOL" size={22} variant="branded" /> : <PwrcCoin />}{asset}</span>
-              <input className="text-input amount-entry-input" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.00" />
+              <input aria-label={`${asset} amount`} className="text-input amount-entry-input" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.00" />
             </div>
-          </label>
+            {balanceIssue ? <span className="field-error">{balanceIssue}</span> : null}
+            {asset === "SOL" && publicKey ? <span className="field-hint">Max leaves a 0.002 SOL fee buffer; your wallet remains authoritative for the final network fee.</span> : null}
+          </div>
 
           {!publicKey ? (
             <button className="primary-button" onClick={() => setVisible(true)}><Wallet size={18} />Connect wallet</button>
@@ -174,14 +221,14 @@ export function SendApp() {
 
         {asset === "PWRC" && <div className="alert"><Info size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />PWRC uses the canonical Token-2022 mint and enforces a {PWRC_TRANSFER_FEE_PERCENT}% transfer fee. The expected fee is embedded in the transfer instruction; Solana network fees are separate.</div>}
         {error && <div className="alert danger" role="alert">{error}</div>}
-        {sig && <div className="tx-success"><span className="success-icon"><Check size={17} /></span><div><strong>Transfer confirmed</strong><span>{asset} was submitted successfully.</span></div><a href={explorerTx(sig)} target="_blank" rel="noreferrer">View transaction</a></div>}
+        {sig && <div className="tx-success"><span className="success-icon"><Check size={17} /></span><div><strong>Transfer confirmed</strong><span>{asset} was submitted successfully.</span></div><a href={explorerTx(sig, cluster)} target="_blank" rel="noreferrer">View transaction</a></div>}
       </section>
 
       <aside className="panel balance-card transaction-review">
         <span className="section-kicker">Transfer review</span>
         <div className="transaction-asset-head">
           {asset === "SOL" ? <TokenIcon symbol="SOL" size={38} variant="branded" /> : <PwrcCoin />}
-          <div><strong>{asset}</strong><span>Solana</span></div>
+          <div><strong>{asset}</strong><span>Solana {networkLabel}</span></div>
         </div>
         <div className="review-list">
           <div><span>From</span><strong>{publicKey ? compactAddress(publicKey.toBase58(), 5, 5) : "Not connected"}</strong></div>
@@ -190,6 +237,7 @@ export function SendApp() {
           {asset === "PWRC" && <div><span>PWRC fee ({PWRC_TRANSFER_FEE_PERCENT}%)</span><strong>{feeLoading ? "Loading…" : feeQuote ? `${formatNumber(Number(feeQuote.feeRaw) / 1e9, 6)} PWRC` : "Unavailable"}</strong></div>}
           {asset === "PWRC" && <div><span>Recipient receives</span><strong>{feeQuote ? `${formatNumber(Number(feeQuote.netRaw) / 1e9, 6)} PWRC` : "—"}</strong></div>}
           {asset === "PWRC" && <div><span>Mint</span><strong title={CANONICAL_PWRC_MINT}>{compactAddress(CANONICAL_PWRC_MINT, 6, 6)}</strong></div>}
+          <div><span>Available balance</span><strong>{availableBalance == null ? "—" : `${formatNumber(availableBalance, asset === "SOL" ? 4 : 2)} ${asset}`}</strong></div>
           <div><span>Network fee</span><strong>Estimated by wallet</strong></div>
         </div>
         <div className="security-note"><ShieldCheck size={16} />The connected wallet signs every transfer. PowerPay does not custody your assets.</div>

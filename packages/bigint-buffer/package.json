@@ -1,0 +1,22 @@
+{
+  "name": "bigint-buffer",
+  "version": "1.1.6",
+  "private": true,
+  "description": "PowerChain-reviewed pure-JS compatibility replacement for the abandoned bigint-buffer native package.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "require": "./index.cjs"
+    }
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "buffer": "^6.0.3"
+  }
+}

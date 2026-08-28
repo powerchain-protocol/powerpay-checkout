@@ -1,4 +1,5 @@
 export const APP_NAME = "PowerPay";
+export const APP_VERSION = "1.0.0";
 export const PRODUCT_NAME = "PWRC";
 export const PRODUCT_DESCRIPTION = "PowerChain Token-2022 on Solana";
 export const DISPLAY_CURRENCY = "USD";
@@ -7,11 +8,16 @@ export const PWRC_SYMBOL = "PWRC";
 export const SOL_DECIMALS = 9;
 export const PWRC_DECIMALS = 9;
 export const CANONICAL_PWRC_MINT = "PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc";
-export const PWRC_TRANSFER_FEE_BPS = 200;
-export const PWRC_TRANSFER_FEE_PERCENT = PWRC_TRANSFER_FEE_BPS / 100;
-export const POWERPAY_SERVICE_FEE_BPS = 0;
+export {
+  POWERPAY_SERVICE_FEE_BPS,
+  POWERPAY_SERVICE_FEE_PERCENT,
+  PWRC_TRANSFER_FEE_BPS,
+  PWRC_TRANSFER_FEE_PERCENT,
+} from "./price-rates";
 export const WRAPPED_SOL_MINT = "So11111111111111111111111111111111111111112";
 export const DEFAULT_MARKET_REFRESH_MS = 15_000;
+export const DEFAULT_BALANCE_REFRESH_MS = 12_000;
+export const DEFAULT_SYSTEM_HEALTH_REFRESH_MS = 30_000;
 export const DEFAULT_MARKET_STALE_AFTER_SECONDS = 90;
 export const DEFAULT_BUY_SOL = "0.50";
 export const QUICK_BUY_SOL_AMOUNTS = ["0.10", "0.25", "0.50", "1.00"] as const;

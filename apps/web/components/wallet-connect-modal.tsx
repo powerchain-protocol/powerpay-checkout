@@ -27,7 +27,8 @@ import {
   X,
 } from "lucide-react";
 import { CANONICAL_PWRC_MINT } from "@/constants/app";
-import { clientEnv } from "@/env/client";
+import { useSolanaNetwork } from "@/context/solana-network-context";
+import { NetworkSwitcher } from "./network-switcher";
 import { compactAddress } from "@/lib/format";
 
 type WalletConnectModalContextValue = {
@@ -100,6 +101,7 @@ function WalletConnectModal({ onClose }: { onClose: () => void }) {
     select,
   } = useWallet();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const { label: clusterLabel, programId } = useSolanaNetwork();
   const [pendingWallet, setPendingWallet] = useState<WalletName | null>(null);
   const [error, setError] = useState("");
 
@@ -211,8 +213,6 @@ function WalletConnectModal({ onClose }: { onClose: () => void }) {
     };
   }, [onClose]);
 
-  const clusterLabel = clientEnv.solanaCluster === "mainnet-beta" ? "Mainnet" : clientEnv.solanaCluster;
-
   return (
     <div className="wallet-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div
@@ -220,6 +220,7 @@ function WalletConnectModal({ onClose }: { onClose: () => void }) {
         className="wallet-modal"
         role="dialog"
         aria-modal="true"
+        aria-busy={connecting || disconnecting}
         aria-labelledby="wallet-modal-title"
         aria-describedby="wallet-modal-description"
       >
@@ -242,6 +243,8 @@ function WalletConnectModal({ onClose }: { onClose: () => void }) {
           Connect a Solana wallet to buy, send, and receive PWRC. PowerPay never asks for your recovery phrase or private key.
         </p>
 
+        <NetworkSwitcher inline />
+
         <div className="wallet-modal-context" aria-label="Connection context">
           <div>
             <span className="wallet-modal-context-icon"><NetworkIcon network="solana" size={19} variant="branded" /></span>
@@ -250,6 +253,10 @@ function WalletConnectModal({ onClose }: { onClose: () => void }) {
           <div>
             <span className="wallet-modal-context-icon pwrc-context-mark">P</span>
             <span><small>PWRC mint</small><strong>{compactAddress(CANONICAL_PWRC_MINT, 5, 5)}</strong></span>
+          </div>
+          <div>
+            <span className="wallet-modal-context-icon">#</span>
+            <span><small>Sale program</small><strong>{programId ? compactAddress(programId, 5, 5) : "Not configured"}</strong></span>
           </div>
         </div>
 

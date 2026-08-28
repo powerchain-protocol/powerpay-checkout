@@ -1,8 +1,8 @@
 {
   "name": "@powerchain/powerpay",
-  "version": "1.6.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "PowerPay \u2014 Solana-native PWRC checkout, Solana Pay scan-to-pay, wallet send/receive, and Token-2022 sale program.",
+  "description": "PowerPay — Solana-native PWRC checkout, Solana Pay scan-to-pay, wallet send/receive, and Token-2022 sale program.",
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=20.18"
@@ -19,18 +19,30 @@
     "sale:inspect": "node --env-file=.env.local scripts/sale-admin.mjs inspect",
     "setup:env": "node scripts/setup-env.mjs",
     "doctor": "node scripts/doctor.mjs",
-    "bootstrap": "pnpm run doctor && pnpm run setup:env && pnpm install"
+    "bootstrap": "pnpm run doctor && pnpm run setup:env && pnpm install",
+    "sale:init:devnet": "node --env-file=.env.local scripts/sale-admin.mjs initialize --cluster devnet",
+    "sale:init:mainnet": "node --env-file=.env.local scripts/sale-admin.mjs initialize --cluster mainnet-beta",
+    "sale:update:devnet": "node --env-file=.env.local scripts/sale-admin.mjs update --cluster devnet",
+    "sale:update:mainnet": "node --env-file=.env.local scripts/sale-admin.mjs update --cluster mainnet-beta",
+    "sale:fund:devnet": "node --env-file=.env.local scripts/sale-admin.mjs fund --cluster devnet",
+    "sale:fund:mainnet": "node --env-file=.env.local scripts/sale-admin.mjs fund --cluster mainnet-beta",
+    "sale:inspect:devnet": "node --env-file=.env.local scripts/sale-admin.mjs inspect --cluster devnet",
+    "sale:inspect:mainnet": "node --env-file=.env.local scripts/sale-admin.mjs inspect --cluster mainnet-beta",
+    "check:accessibility": "node scripts/check-accessibility.mjs",
+    "check:security": "node scripts/check-security.mjs",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "check:static": "pnpm run doctor && pnpm run check:accessibility && pnpm run check:security && pnpm run check:architecture && pnpm run check:dependency-security",
+    "check": "pnpm run check:static && pnpm typecheck && pnpm run test:unit",
+    "test:unit": "node --test tests/*.spec.mjs",
+    "check:dependency-security": "node scripts/check-dependency-security.mjs"
   },
   "devDependencies": {
     "@anchor-lang/core": "1.1.2",
-    "@types/chai": "^5.2.2",
-    "@types/mocha": "^10.0.10",
-    "chai": "^6.0.1",
-    "ts-mocha": "^11.1.0",
     "typescript": "5.9.3"
   },
   "dependencies": {
     "@solana/spl-token": "^0.4.15",
-    "@solana/web3.js": "^1.98.4"
+    "@solana/web3.js": "^1.98.4",
+    "bigint-buffer": "workspace:*"
   }
 }

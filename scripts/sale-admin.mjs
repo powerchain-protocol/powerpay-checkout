@@ -24,8 +24,18 @@ import {
 const CANONICAL_PWRC_MINT = new PublicKey("PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc");
 const PWRC_DECIMALS = 9;
 const REQUIRED_PWRC_TRANSFER_FEE_BPS = 200;
-const PROGRAM_ID = new PublicKey(required("POWERPAY_PROGRAM_ID"));
-const RPC = process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com";
+
+const clusterFlagIndex = process.argv.indexOf("--cluster");
+const requestedCluster = clusterFlagIndex >= 0 ? process.argv[clusterFlagIndex + 1] : process.env.POWERPAY_CLUSTER || process.env.SOLANA_CLUSTER || "devnet";
+if (requestedCluster !== "devnet" && requestedCluster !== "mainnet-beta") {
+  throw new Error(`Unsupported cluster '${requestedCluster}'. Use devnet or mainnet-beta.`);
+}
+const CLUSTER = requestedCluster;
+const ENV_SUFFIX = CLUSTER === "mainnet-beta" ? "MAINNET_BETA" : "DEVNET";
+const RPC = process.env[`SOLANA_RPC_URL_${ENV_SUFFIX}`]
+  || process.env.SOLANA_RPC_URL
+  || (CLUSTER === "mainnet-beta" ? "https://api.mainnet-beta.solana.com" : "https://api.devnet.solana.com");
+const PROGRAM_ID = new PublicKey(process.env[`POWERPAY_PROGRAM_ID_${ENV_SUFFIX}`] || required("POWERPAY_PROGRAM_ID"));
 const connection = new Connection(RPC, "confirmed");
 const authority = loadKeypair(process.env.ANCHOR_WALLET || "~/.config/solana/id.json");
 const [config] = PublicKey.findProgramAddressSync([Buffer.from("sale")], PROGRAM_ID);
@@ -91,7 +101,7 @@ async function send(ixs) {
   const tx = new Transaction().add(...ixs);
   tx.feePayer = authority.publicKey;
   const signature = await sendAndConfirmTransaction(connection, tx, [authority], { commitment: "confirmed" });
-  console.log(`Signature: ${signature}`);
+  console.log(`[${CLUSTER}] Signature: ${signature}`);
   return signature;
 }
 
@@ -254,6 +264,9 @@ async function inspect() {
   };
 
   const state = {
+    cluster: CLUSTER,
+    rpc: RPC,
+    programId: PROGRAM_ID.toBase58(),
     config: config.toBase58(),
     authority: pubkey(),
     treasury: pubkey(),
@@ -286,4 +299,4 @@ if (command === "initialize") await initialize();
 else if (command === "update") await update();
 else if (command === "fund") await fund();
 else if (command === "inspect") await inspect();
-else throw new Error("Usage: sale-admin.mjs initialize|update|fund|inspect");
+else throw new Error("Usage: sale-admin.mjs initialize|update|fund|inspect [--cluster devnet|mainnet-beta]");

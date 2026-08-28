@@ -1,110 +1,120 @@
 # PowerPay
 
-**PowerPay** is the Solana-native checkout for buying **PWRC** with **SOL**. It combines wallet-signed settlement, Solana Pay Scan To Pay, Token-2022 fee enforcement, SOL/PWRC send and receive, and independent SOL/USD market references in a responsive Next.js application.
+**Canonical version: 1.0.0**
 
-> **Canonical PWRC mint**  
+PowerPay is the Solana-native checkout for buying **PWRC** with **SOL**. It provides browser-wallet checkout, Solana Pay Scan To Pay, SOL/PWRC send and receive, Token-2022 fee-aware settlement, and Pyth/Birdeye SOL/USD reference data in a responsive Next.js application.
+
+> **Canonical PWRC Token-2022 mint**  
 > `PWRCRXXZxbg6FdQZfK3PMD7KP8xfxs9acvifJiG46wc`
+
+## Canonical release contract
+
+PowerPay `1.0.0` is the stable product/version identifier for this repository. Feature work does not change that product version unless a deliberate release-version decision is made.
+
+The release supports exactly two public Solana environments:
+
+| Network | Runtime cluster | Purpose | Value |
+| --- | --- | --- | --- |
+| Devnet | `devnet` | integration, wallet, Solana Pay and program testing | test assets |
+| Mainnet Beta | `mainnet-beta` | production settlement | real SOL / PWRC |
+
+The UI can switch between both networks. A network change disconnects the active wallet, changes the browser RPC, routes API requests to the matching server RPC/program mapping, resets stale checkout state, and uses the correct explorer URL.
 
 ## What ships
 
-- **Buy PWRC** — browser-wallet and Solana Pay checkout paths share the same transaction builder.
-- **Scan To Pay** — Solana Pay transaction-request QR with single-use purchase receipts.
-- **Wallet connection** — Wallet Standard discovery with a PowerPay-owned modal, wallet switching, mobile bottom-sheet behavior, and non-custodial safety states.
-- **Send / Receive** — SOL and canonical PWRC transfer workflows.
-- **Token-2022 fee handling** — active PWRC transfer fee must be **200 bps / 2%**; the current maximum-fee cap is respected.
-- **Market references** — Pyth primary SOL/USD data with Birdeye corroboration/fallback. Market data never controls settlement.
-- **Responsive checkout** — dedicated `components/mobile.tsx` action surface for phone layouts.
-- **Legal surfaces** — Terms of Sale, Cookies, and Disclaimer routes.
-- **Anchor program** — atomic SOL → PWRC sale program with quote binding and replay-resistant purchase receipt PDAs.
+- **Buy PWRC** with SOL through a connected Solana wallet.
+- **Solana Pay Scan To Pay** with expiring transaction-request QR codes.
+- **Wallet Standard** discovery with a PowerPay-owned connect modal.
+- **Devnet / Mainnet Beta selector** with explicit TEST/LIVE states and a production confirmation step.
+- **Send SOL / PWRC** with wallet-reviewed transactions.
+- **Receive SOL** through public address or Solana Pay QR/link.
+- **Token-2022 fee enforcement** requiring the active PWRC transfer fee to be **200 bps / 2%**.
+- **Pyth + Birdeye SOL/USD** reference data with freshness/deviation state.
+- **Cluster-aware wallet balances** for SOL/PWRC with visibility-aware refresh, checkout sufficiency checks, transfer balance review and a safe SOL max buffer.
+- **Runtime health surface** backed by `/api/system/health`, verifying RPC reachability, deployed program state, sale initialization, canonical Token-2022 mint ownership, active 2% fee policy and sale-vault inventory.
+- **API hardening** with a 1 MiB request-body ceiling, request correlation IDs, no-store responses, safe JSON parsing and an OpenAPI endpoint with authorization persistence disabled.
+- **RPC hardening** with an 8-second timeout, explicit latency/error states, response-size limits and clear separation between read transport and on-chain settlement authority.
+- **Navigation accessibility** with route-aware `aria-current`, Next.js client transitions, focus trapping, Escape-to-close, focus restoration and background scroll locking on the public mobile dialog.
+- **WebSocket policy guard** for adapters/gateways: 64 KiB messages, authentication-attempt limits, subscription caps, message-rate limits and policy/rate-limit close mappings.
+- **Responsive UI** including `components/mobile.tsx` for phone checkout actions, accessible skip navigation and stronger transaction-state feedback.
+- **Legal routes** for Terms of Sale, Cookies and Disclaimer.
+- **Anchor sale program** with quote binding and replay-resistant purchase receipt PDAs.
 
 ## Settlement model
 
 ```text
+selected cluster
+    │
+    ├─ devnet RPC + devnet program
+    └─ mainnet-beta RPC + mainnet program
+    │
+    ▼
 Buyer reviews quote
-      │
-      ├─ SOL purchase amount
-      ├─ gross PWRC
-      ├─ 2% PWRC Token-2022 transfer fee
-      ├─ net PWRC
-      └─ separate Solana network fee
-      │
-      ▼
-Wallet signature / Solana Pay request
-      │
-      ▼
+    ├─ SOL purchase amount
+    ├─ 2% PowerPay service fee in SOL
+    ├─ gross PWRC
+    ├─ 2% PWRC Token-2022 transfer fee
+    ├─ net PWRC
+    └─ separate Solana network fee
+    │
+    ▼
+Wallet signature / Solana Pay transaction request
+    │
+    ▼
 buy_pwrc(...)
-      ├─ buyer SOL ─────────────► configured treasury
-      ├─ sale vault gross PWRC ─► buyer Token-2022 ATA
-      └─ PurchaseReceipt PDA ───► immutable settlement evidence
+    ├─ purchase SOL + 2% service fee ─► configured treasury
+    ├─ gross PWRC ────────────────────► buyer Token-2022 ATA
+    └─ PurchaseReceipt ───────────────► immutable settlement evidence
 ```
 
-The **sale config PDA is settlement authority** for the executable PWRC/SOL rate, treasury, limits, enabled state, and sale inventory boundary. Pyth and Birdeye are display/reconciliation inputs only.
+The **sale config PDA** remains settlement authority for the executable PWRC/SOL rate, treasury, limits, enabled state and inventory boundary. Pyth/Birdeye data never controls the executable token rate.
+
+Mainnet is intentionally stricter: if the live on-chain quote cannot be read, the mainnet quote endpoint fails closed instead of returning a purchasable preview.
 
 ## Fee model
 
-| Fee | Current policy | Paid by / destination |
-| --- | --- | --- |
-| PWRC Token-2022 transfer fee | **2% / 200 bps**, subject to mint max-fee cap | Applied by Token-2022 |
-| Solana network fee | Runtime-dependent | Transaction fee payer |
-| PowerPay checkout service fee | **0%** | Not charged |
+| Fee | Policy |
+| --- | --- |
+| PWRC Token-2022 transfer fee | **2% / 200 bps**, subject to the mint max-fee cap |
+| Solana transaction fee | separate; paid by the transaction fee payer |
+| PowerPay checkout service fee | **2% / 200 bps** of the SOL purchase amount; charged atomically to the configured treasury |
 
-See [`docs/FEES.md`](docs/FEES.md) for the complete fee contract.
+See [`docs/FEES.md`](docs/FEES.md).
 
 ## Toolchain
 
 | Component | Version / policy |
 | --- | --- |
+| PowerPay | **1.0.0** |
 | Node.js | `>=20.18` |
 | pnpm | `11.24.0` |
 | Next.js | `16.3.x` |
 | React | `19.x` |
 | TypeScript | `5.9.3` |
-| Anchor CLI / crates | `1.1.2` |
+| Anchor CLI / Rust crates | `1.1.2` |
 | Anchor TypeScript client | `@anchor-lang/core@1.1.2` |
 | Solana CLI | `3.1.10` |
-| Solana web3 client | `@solana/web3.js` v1 line |
-
-Anchor v1 removed the legacy `@coral-xyz/anchor` TypeScript package from this workspace. See [`docs/ANCHOR_V1_MIGRATION.md`](docs/ANCHOR_V1_MIGRATION.md).
+| Solana client | `@solana/web3.js` v1 line |
 
 ## Repository
 
 ```text
 powerpay/
-├─ apps/web/                 Next.js checkout application
-├─ programs/pwrc-sale/       Anchor SOL → PWRC program
-├─ scripts/                  environment, diagnostics, sale admin
-├─ tests/                    Anchor integration tests
-├─ docs/                     architecture and operations docs
-├─ Anchor.toml               pinned Anchor / Solana toolchain
-├─ pnpm-workspace.yaml       workspace + reviewed build scripts
-└─ README.md
-```
-
-### Web application
-
-```text
-apps/web/
-├─ app/
-│  ├─ api/quote/
-│  ├─ api/market/sol-usd/
-│  ├─ api/transactions/buy/
-│  ├─ api/solana-pay/
-│  ├─ checkout/
-│  ├─ send/
-│  ├─ receive/
-│  ├─ terms-of-sale/
-│  ├─ cookies/
-│  └─ disclaimer/
-├─ components/
-│  ├─ checkout-app.tsx
-│  ├─ mobile.tsx
-│  ├─ solana-provider.tsx
-│  └─ wallet-connect-modal.tsx
-├─ constants/
-├─ context/
-├─ env/
-├─ lib/
-└─ utils/
+├─ apps/web/
+│  ├─ app/                    App Router pages + APIs
+│  ├─ components/             checkout, wallet, network, mobile UI
+│  ├─ constants/              app, market, route and network constants
+│  ├─ context/                network, market, wallet-balance + system-health state
+│  ├─ env/                    browser/server environment boundaries
+│  ├─ lib/                    pricing, errors, Solana builders
+│  ├─ app/api/system/health/  cluster/runtime readiness API
+│  └─ utils/
+├─ programs/pwrc-sale/        Anchor SOL → PWRC program
+├─ programs/settlements/      canonical fee/settlement math shared by the program
+├─ scripts/                   setup, diagnostics and sale administration
+├─ tests/                     Anchor integration tests
+├─ docs/                      architecture and operating documentation
+└─ Anchor.toml
 ```
 
 ## Quick start
@@ -119,116 +129,140 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm run setup:env` creates missing local environment files from the checked-in templates without overwriting existing values.
+PowerPay starts on **devnet** by default. The network selector is available in the header and wallet-connect surface.
+Mainnet Beta is fully wired but **disabled by default**; enable both the browser selector and server execution gate only after the production program, mint, RPC and treasury configuration are verified.
 
-Open `http://localhost:3000` and use devnet unless you have deliberately configured another cluster.
+## Dual-network configuration
 
-## Environment
+PowerPay never accepts an arbitrary RPC URL or program id from a request. A request may select only `devnet` or `mainnet-beta`; server code then resolves that cluster against reviewed environment configuration.
 
-Two local environment files are used:
+Required mappings:
 
-- `.env.local` — sale administration and root tooling.
-- `apps/web/.env.local` — Next.js runtime configuration.
+```bash
+NEXT_PUBLIC_DEFAULT_SOLANA_CLUSTER=devnet
+NEXT_PUBLIC_ENABLE_MAINNET_BETA=false
+POWERPAY_ENABLE_MAINNET_BETA=false
 
-Important production rules:
+NEXT_PUBLIC_SOLANA_RPC_URL_DEVNET=https://api.devnet.solana.com
+NEXT_PUBLIC_SOLANA_RPC_URL_MAINNET_BETA=https://api.mainnet-beta.solana.com
+SOLANA_RPC_URL_DEVNET=https://api.devnet.solana.com
+SOLANA_RPC_URL_MAINNET_BETA=https://api.mainnet-beta.solana.com
 
-- Keep `PYTH_API_KEY` and `BIRDEYE_API_KEY` server-only.
-- Use a private production RPC where appropriate.
-- Set `NEXT_PUBLIC_APP_URL` to a public HTTPS origin for Solana Pay.
-- Set `POWERPAY_REQUIRE_ONCHAIN_QUOTE=true` in production.
-- Keep the canonical PWRC mint unchanged unless the protocol itself is intentionally migrated.
+NEXT_PUBLIC_POWERPAY_PROGRAM_ID_DEVNET=<devnet-program-id>
+NEXT_PUBLIC_POWERPAY_PROGRAM_ID_MAINNET_BETA=<mainnet-program-id>
+POWERPAY_PROGRAM_ID_DEVNET=<devnet-program-id>
+POWERPAY_PROGRAM_ID_MAINNET_BETA=<mainnet-program-id>
+```
 
-See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
+For production, replace public RPC defaults with production-grade infrastructure and set:
 
-## Program workflow
+```bash
+POWERPAY_REQUIRE_ONCHAIN_QUOTE=true
+NEXT_PUBLIC_APP_URL=https://<powerpay-origin>
+```
 
-Build and test the program:
+See [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) and [`docs/NETWORKS.md`](docs/NETWORKS.md).
+
+## Program deployment
+
+Local tests remain on Anchor localnet. Deployment is explicit by cluster.
 
 ```bash
 anchor build
 anchor test
-```
 
-For a new deployment:
-
-```bash
-anchor keys sync
-anchor build
+# Devnet
 anchor deploy --provider.cluster devnet
-anchor keys list
+pnpm sale:inspect:devnet
+
+# Mainnet Beta — only after audit/release approval
+anchor deploy --provider.cluster mainnet
+pnpm sale:inspect:mainnet
 ```
 
-Then update `POWERPAY_PROGRAM_ID` and `NEXT_PUBLIC_POWERPAY_PROGRAM_ID`, initialize the sale, fund inventory, inspect configuration, and only then enable it.
+Anchor calls the production cluster `mainnet`; the web/runtime identifier is `mainnet-beta`.
+
+Before enabling either sale:
+
+- verify program id for the selected cluster
+- verify canonical PWRC mint
+- verify 9 decimals
+- verify active Token-2022 transfer fee = 200 bps
+- verify treasury and rate
+- verify min/max purchase limits
+- verify vault inventory
+- verify Solana Pay request/status flow
+- verify explorer links resolve to the selected cluster
+
+## Operator commands
+
+Generic commands use `POWERPAY_CLUSTER` from `.env.local`:
 
 ```bash
 pnpm sale:init
 pnpm sale:fund
-pnpm sale:inspect
 pnpm sale:update
+pnpm sale:inspect
 ```
 
-Before enabling a sale, verify:
+Cluster-explicit commands are preferred for release operations:
 
-- canonical PWRC mint
-- 9 decimals
-- active Token-2022 fee = 200 bps
-- treasury
-- PWRC-per-SOL rate
-- min/max purchase limits
-- vault inventory
-- program id and cluster
+```bash
+pnpm sale:init:devnet
+pnpm sale:fund:devnet
+pnpm sale:inspect:devnet
 
-## Wallet connection
+pnpm sale:init:mainnet
+pnpm sale:fund:mainnet
+pnpm sale:inspect:mainnet
+```
 
-PowerPay uses `@solana/wallet-adapter-react` with Wallet Standard discovery and a custom connection surface. The UI does not treat wallet connection as transaction approval and never requests private keys or recovery phrases.
+Mainnet initialization/funding/enabling should remain a separately approved operational action.
 
-See [`docs/WALLET_CONNECT.md`](docs/WALLET_CONNECT.md).
+## Runtime readiness
 
-## Market data
+The header health badge is backed by `GET /api/system/health?cluster=devnet|mainnet-beta`. It is informational for operators and users; settlement remains governed by the same fail-closed transaction builders and on-chain program invariants. The health response does not expose private RPC credentials.
 
-`GET /api/market/sol-usd` selects a reference observation using:
-
-1. fresh Pyth observation
-2. fresh Birdeye observation
-3. stale upstream observation, visibly degraded
-4. configured fallback, marked reference-only
-
-Provider divergence and freshness are surfaced to the UI. None of these inputs can mutate the executable PWRC/SOL sale rate.
-
-See [`docs/PRICE_DATA.md`](docs/PRICE_DATA.md).
+Connected-wallet SOL/PWRC balances are read through the active cluster connection. They are used for UX validation only; the wallet and Solana runtime remain authoritative at signing time.
 
 ## Release gates
+
+If `pnpm-lock.yaml` is not present in a fresh source export, run `pnpm install` once and commit the generated lockfile before using the frozen-lockfile gate.
 
 ```bash
 pnpm run doctor
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
-cargo fmt --check
 anchor build
 anchor test
-pnpm sale:inspect
 ```
 
-The repository uses pnpm's fail-closed dependency-build policy. Approved native build scripts are listed explicitly in `pnpm-workspace.yaml`; do not replace that policy with `dangerouslyAllowAllBuilds`.
-
-See [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) and [`docs/DEPENDENCY_POLICY.md`](docs/DEPENDENCY_POLICY.md).
+Then execute the network-specific checks in [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md).
 
 ## Documentation
 
-Start at [`docs/README.md`](docs/README.md).
+- [`CHANGELOG.md`](CHANGELOG.md) — canonical 1.0.0 hardening history
+- [`MANIFEST.md`](MANIFEST.md) — source, policy and release manifest
+- [`docs/README.md`](docs/README.md) — documentation index
+- [`docs/SECURITY.md`](docs/SECURITY.md) — API, RPC, WebSocket and browser security controls
+- [`docs/API.md`](docs/API.md) — hardened API conventions and OpenAPI behavior
+- [`docs/NETWORKS.md`](docs/NETWORKS.md) — devnet/mainnet-beta architecture
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system boundaries
+- [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — environment contract
+- [`docs/PROGRAM_SECURITY.md`](docs/PROGRAM_SECURITY.md) — settlement invariants
+- [`docs/PRICE_DATA.md`](docs/PRICE_DATA.md) — Pyth/Birdeye boundary
+- [`docs/WALLET_CONNECT.md`](docs/WALLET_CONNECT.md) — wallet connection UX
+- [`docs/FEES.md`](docs/FEES.md) — fee contract
+- [`docs/DEPENDENCY_POLICY.md`](docs/DEPENDENCY_POLICY.md) — pnpm build policy
+- [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) — release gates
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Configuration](docs/CONFIGURATION.md)
-- [Fees](docs/FEES.md)
-- [Price data](docs/PRICE_DATA.md)
-- [Wallet connection](docs/WALLET_CONNECT.md)
-- [Program security](docs/PROGRAM_SECURITY.md)
-- [Anchor v1 migration](docs/ANCHOR_V1_MIGRATION.md)
-- [Dependency policy](docs/DEPENDENCY_POLICY.md)
-- [Release checklist](docs/RELEASE_CHECKLIST.md)
-- [Build notes](BUILD_NOTES.md)
+## Security boundary
 
-## Legal and production notice
+PowerPay is non-custodial. The web/server components construct and inspect transactions; the buyer wallet signs them. Never place wallet seed phrases, private keys, operator keypairs, Pyth API keys or Birdeye API keys in browser-exposed environment variables.
 
-PowerPay includes technical templates for Terms of Sale, Cookies, and Disclaimer pages. They are not a substitute for jurisdiction-specific legal, tax, sanctions, consumer-protection, securities, or digital-asset review. Audit the program and production configuration before mainnet enablement.
+Legal documents in this repository are deployment templates and require jurisdiction-specific review before production use.
+
+## Dependency security
+
+See [`docs/DEPENDENCY_SECURITY.md`](docs/DEPENDENCY_SECURITY.md) for the current Dependabot remediation policy, lockfile regeneration procedure, and legacy Solana compatibility bridge.

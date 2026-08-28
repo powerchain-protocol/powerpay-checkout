@@ -1,0 +1,12 @@
+[package]
+name = "powerpay-settlements"
+version = "1.0.0"
+description = "Pure settlement math and fee invariants shared by PowerPay Solana programs"
+edition = "2021"
+rust-version = "1.89"
+
+[lib]
+name = "powerpay_settlements"
+crate-type = ["lib"]
+
+[dependencies]

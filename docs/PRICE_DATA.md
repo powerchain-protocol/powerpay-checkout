@@ -2,6 +2,17 @@
 
 PowerPay uses SOL/USD observations to improve checkout transparency without allowing an off-chain market provider to control token settlement.
 
+## Source modules
+
+```text
+apps/web/constants/price-rates.ts   canonical fee/rate policy
+apps/web/lib/pricing/pyth.ts        Pyth fetch/normalization
+apps/web/lib/pricing/birdeye.ts     Birdeye fetch/normalization
+apps/web/lib/solana/rpc.ts          bounded Solana JSON-RPC transport
+apps/web/lib/solana/solana.ts       connection and settlement-authority helpers
+apps/web/data/fetch-data.ts         bounded browser/API fetch helper
+```
+
 ## Providers
 
 ### Pyth

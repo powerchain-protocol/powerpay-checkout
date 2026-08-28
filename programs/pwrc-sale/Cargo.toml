@@ -1,6 +1,6 @@
 [package]
 name = "pwrc-sale"
-version = "0.3.0"
+version = "1.0.0"
 description = "Atomic SOL → canonical PWRC Token-2022 sale program for PowerPay"
 edition = "2021"
 rust-version = "1.89"
@@ -20,3 +20,5 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 [dependencies]
 anchor-lang = { version = "=1.1.2", features = ["init-if-needed"] }
 anchor-spl = { version = "=1.1.2", features = ["associated_token", "token_2022", "token_2022_extensions"] }
+
+powerpay-settlements = { path = "../settlements" }

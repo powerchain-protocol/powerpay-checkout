@@ -1,7 +1,7 @@
 import { serverEnv } from "@/env/server";
 import { AppError } from "@/lib/errors";
 import { MARKET_REQUEST_TIMEOUT_MS } from "@/constants/market";
-import { fetchWithTimeout, safeNumber } from "@/utils/util";
+import { fetchWithTimeout, readJsonResponse, safeNumber } from "@/utils/util";
 import type { PriceObservation } from "./types";
 
 export async function fetchPythSolUsd(): Promise<PriceObservation> {
@@ -26,9 +26,9 @@ export async function fetchPythSolUsd(): Promise<PriceObservation> {
     throw new AppError(`Pyth Hermes returned ${response.status}`, "UPSTREAM_UNAVAILABLE", 503);
   }
 
-  const payload = await response.json() as {
+  const payload = await readJsonResponse<{
     parsed?: Array<{ price?: { price?: string; conf?: string; expo?: number; publish_time?: number } }>;
-  };
+  }>(response);
   const raw = payload.parsed?.[0]?.price;
   if (!raw?.price || raw.expo == null || !raw.publish_time) {
     throw new AppError("Pyth returned an invalid SOL/USD payload", "UPSTREAM_UNAVAILABLE", 503);

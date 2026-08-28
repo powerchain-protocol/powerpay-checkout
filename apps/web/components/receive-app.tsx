@@ -7,10 +7,12 @@ import { Check, Copy, Link2, ShieldCheck, Smartphone, Wallet } from "lucide-reac
 import { NetworkIcon } from "@web3icons/react/dynamic";
 import { compactAddress } from "@/lib/format";
 import { useWalletConnectModal } from "./wallet-connect-modal";
+import { useSolanaNetwork } from "@/context/solana-network-context";
 
 export function ReceiveApp() {
   const { publicKey } = useWallet();
   const { setVisible } = useWalletConnectModal();
+  const { cluster, label: networkLabel, production } = useSolanaNetwork();
   const [amount, setAmount] = useState("");
   const [url, setUrl] = useState("");
   const [copied, setCopied] = useState(false);
@@ -23,7 +25,7 @@ export function ReceiveApp() {
     }
 
     const id = window.setTimeout(async () => {
-      const qs = new URLSearchParams({ recipient: publicKey.toBase58() });
+      const qs = new URLSearchParams({ recipient: publicKey.toBase58(), cluster });
       if (Number(amount) > 0) qs.set("amount", amount);
       const response = await fetch(`/api/solana-pay/receive?${qs}`);
       const data = await response.json();
@@ -31,7 +33,7 @@ export function ReceiveApp() {
     }, 200);
 
     return () => window.clearTimeout(id);
-  }, [publicKey, amount]);
+  }, [amount, cluster, publicKey]);
 
   async function copyAddress() {
     if (!publicKey) return;
@@ -50,6 +52,7 @@ export function ReceiveApp() {
   return (
     <div className="page-grid">
       <section className="panel form-panel transaction-panel">
+        <div className={`transaction-network-state ${production ? "mainnet" : "devnet"}`}><span className="network-dot" /><strong>{networkLabel}</strong><span>{production ? "Real SOL" : "Test SOL"}</span></div>
         <span className="section-kicker">Solana Pay</span>
         <h1 className="page-title">Receive SOL</h1>
         <p className="eyebrow">Share your wallet address or a Solana Pay QR. Add an optional amount for a pre-filled request.</p>
@@ -88,7 +91,7 @@ export function ReceiveApp() {
         <span className="section-kicker">Receive details</span>
         <div className="transaction-asset-head">
           <NetworkIcon network="solana" size={38} variant="branded" />
-          <div><strong>Solana address</strong><span>Wallet Standard</span></div>
+          <div><strong>Solana address</strong><span>{networkLabel} · Wallet Standard</span></div>
         </div>
         <div className="address-box">{publicKey?.toBase58() ?? "Not connected"}</div>
         <div className="review-list">

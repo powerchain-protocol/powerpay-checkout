@@ -1,9 +1,28 @@
 packages:
   - apps/*
+  - packages/*
 
-# Explicitly approved after review. Any new dependency build script remains
-# fail-closed until it is individually reviewed and added here.
+# Browser checkout only. @solana/wallet-adapter-react pulls the mobile adapter,
+# whose react-native peer is not required by the browser export. Disabling
+# automatic peer installation prevents the unused React Native/Metro/image-size
+# subtree from entering the lockfile.
+autoInstallPeers: false
+peerDependencyRules:
+  ignoreMissing:
+    - react-native
+
+# The async-storage package is only required by native/mobile adapter paths.
+ignoredOptionalDependencies:
+  - "@react-native-async-storage/async-storage"
+
+# Security convergence. bigint-buffer resolves to the audited in-repo pure-JS
+# compatibility package; uuid is pinned above GHSA-w5hq-g745-h8pq.
+overrides:
+  bigint-buffer: $bigint-buffer
+  uuid: 11.1.1
+
+# Explicitly reviewed native acceleration packages. Any newly introduced build
+# script remains fail-closed until individually reviewed.
 allowBuilds:
-  bigint-buffer: true
   bufferutil: true
   utf-8-validate: true

@@ -1,19 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSolUsdMarketData } from "@/lib/pricing";
 import { errorResponse } from "@/lib/errors";
+import { apiJson, requestIdFor } from "@/lib/api/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const requestId = requestIdFor(req);
   try {
-    const market = await getSolUsdMarketData();
-    return NextResponse.json(market, {
-      headers: {
-        "Cache-Control": "public, max-age=5, s-maxage=10, stale-while-revalidate=30",
-      },
-    });
+    return apiJson(requestId, await getSolUsdMarketData());
   } catch (error) {
-    return errorResponse(error, "SOL/USD market data unavailable");
+    return errorResponse(error, "SOL/USD market data unavailable", requestId);
   }
 }
